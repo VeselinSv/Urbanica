@@ -12,8 +12,11 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      # адресът на базата от Neon (Connection string, с ?sslmode=require) – въвежда се в Render, не в Git
+      # адресът на базата от Neon (pooled, с ?sslmode=require) – въвежда се в Render, не в Git
       - key: DATABASE_URL
+        sync: false
+      # директната връзка от Neon (без -pooler) – за миграциите при стартиране
+      - key: DATABASE_URL_UNPOOLED
         sync: false
       - key: WORLD_SEED
         value: gce-alpha-1

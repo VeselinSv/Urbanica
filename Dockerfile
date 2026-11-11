@@ -35,4 +35,5 @@ COPY scripts scripts
 USER gce
 EXPOSE 3000
 # По подразбиране: миграции + API. За worker: CMD ["node", "apps/worker/dist/main.js"]
-CMD ["sh", "-c", "npx prisma migrate deploy --schema packages/database/prisma/schema.prisma && node apps/api/dist/main.js"]
+# Миграциите изискват директна връзка (без pooler) – DATABASE_URL_UNPOOLED, ако е зададена (напр. Neon).
+CMD ["sh", "-c", "DATABASE_URL=\"${DATABASE_URL_UNPOOLED:-$DATABASE_URL}\" npx prisma migrate deploy --schema packages/database/prisma/schema.prisma && node apps/api/dist/main.js"]

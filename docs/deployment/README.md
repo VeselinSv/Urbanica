@@ -19,7 +19,7 @@
 ## Безплатен вариант (текущият `render.yaml`): Render + Neon
 
 - **Играта:** уеб услуга `urbanica` в Render (план **free**, регион Франкфурт) – API + клиент + **симулацията в същия процес** (`EMBEDDED_WORKER=true`).
-- **Базата:** безплатна PostgreSQL в **Neon** (neon.tech) – не изтича след месец (за разлика от безплатната база на Render). `DATABASE_URL` се въвежда в Render при създаването (не е в Git).
+- **Базата:** безплатна PostgreSQL в **Neon** (neon.tech), проект `urbanica` (Франкфурт) – не изтича след месец (за разлика от безплатната база на Render). `DATABASE_URL` се въвежда в Render при създаването (не е в Git).
 - Ограничения (проверете актуалните условия): уеб услугата в Render **заспива след ~15 минути без посетители** – светът спира и при следващо отваряне се събужда за ~1 минута и наваксва пропуснатите дни (ограничено). Безплатната база в Neon има лимит на мястото (~0.5 GB) и месечни часове изчисления – при нашия размер е достатъчно; базата също „заспива“ без заявки и се събужда за части от секундата.
 - CORS: ако `CORS_ORIGINS` не е зададена, се използва публичният адрес, който Render подава автоматично (`RENDER_EXTERNAL_URL`).
 - Проверено локално: `npm ci` + `npm run build` в чисто копие от GitHub без `.env`; API с `EMBEDDED_WORKER=true` наваксва и тиктака по часовника. Самият Docker образ не е билднат локално (няма Docker на машината) – билдът става в Render.
@@ -27,9 +27,9 @@
 ### Стъпка по стъпка
 
 1. **Neon:** влезте в neon.tech (напр. с GitHub) → **Create project** → име `urbanica`, Postgres 17, регион **AWS Europe Central 1 (Frankfurt)** → **Create**.
-2. В проекта: **Connect** → изберете **без** „Connection pooling“ (директна връзка – нужна е за миграциите) → копирайте адреса (`postgresql://…neon.tech/neondb?sslmode=require`).
+2. В проекта: **Connect** → копирайте два адреса: с включено „Connection pooling“ (за `DATABASE_URL`) и без него (за `DATABASE_URL_UNPOOLED` – миграциите изискват директна връзка). Или с Neon CLI: `neon link` и `neon env pull --file .env.neon` (файлът е в `.gitignore`).
 3. **Render:** влезте в render.com (напр. с GitHub) → **New → Blueprint** → свържете GitHub и изберете `VeselinSv/Urbanica`.
-4. Render показва услугата `urbanica` (Free) и иска стойност за **DATABASE_URL** – поставете адреса от Neon → **Deploy Blueprint**.
+4. Render показва услугата `urbanica` (Free) и иска **DATABASE_URL** (pooled) и **DATABASE_URL_UNPOOLED** (директна) – поставете ги → **Deploy Blueprint**.
 5. Изчакайте билда (5–10 минути). Първото стартиране прилага миграциите и създава света.
 6. Проверка: `https://<адрес>.onrender.com/api/health` → `{"status":"ok","db":"ok",…}`; отворете адреса и основете град.
 
