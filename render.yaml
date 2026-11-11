@@ -1,27 +1,20 @@
-# Render Blueprint – БЕЗПЛАТЕН вариант: една уеб услуга (API + клиент + симулацията в същия процес)
-# и безплатна PostgreSQL база. Разполагане: Render -> New -> Blueprint -> това хранилище.
-# Платеният вариант (отделен worker, винаги онлайн) е описан в docs/deployment/README.md.
-databases:
-  - name: urbanica-db
-    plan: free
-    postgresMajorVersion: '17'
-    databaseName: gce
-    user: gce
-
+# Render Blueprint – БЕЗПЛАТЕН вариант: една уеб услуга (API + клиент + симулацията в същия процес).
+# Базата е външна и безплатна (Neon – не изтича): при създаването Render пита за DATABASE_URL.
+# Разполагане: Render -> New -> Blueprint -> това хранилище. Подробно: docs/deployment/README.md.
 services:
   - type: web
     name: urbanica
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
+    region: frankfurt
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      # адресът на базата от Neon (Connection string, с ?sslmode=require) – въвежда се в Render, не в Git
       - key: DATABASE_URL
-        fromDatabase:
-          name: urbanica-db
-          property: connectionString
+        sync: false
       - key: WORLD_SEED
         value: gce-alpha-1
       - key: TICK_INTERVAL_MS
