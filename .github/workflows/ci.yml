@@ -1,0 +1,35 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: gce
+          POSTGRES_PASSWORD: gce_dev_password
+          POSTGRES_DB: gce_test
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U gce" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://gce:gce_dev_password@localhost:5433/gce_test
+      TEST_DATABASE_URL: postgresql://gce:gce_dev_password@localhost:5433/gce_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run build
+      - run: npm run db:migrate
+      - run: npm test
+      - run: node apps/worker/dist/econ-sim.js 60

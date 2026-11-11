@@ -1,0 +1,598 @@
+// Urbanica (автор: Веселин Стоянов) – схема на базата данни (PostgreSQL).
+// Паричните стойности са BigInt в центове. Пространственото състояние на града (плочки) е версиониран
+// JSON документ в City (агрегат), а икономическите обекти са релационни таблици.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PLAYER
+  ADMIN
+}
+
+enum OwnerType {
+  USER
+  CITY
+  COMPANY
+  SYSTEM
+}
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  email        String    @unique
+  passwordHash String
+  role         Role      @default(PLAYER)
+  createdAt    DateTime  @default(now())
+  lastActiveAt DateTime  @default(now())
+  mutedUntil   DateTime?
+  sessions     Session[]
+  cities       City[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model World {
+  id                Int      @id @default(1)
+  seed              String
+  size              Int
+  tick              Int      @default(0)
+  tickIntervalMs    Int
+  lastTickAt        DateTime @default(now())
+  baseRate          Float    @default(0.05)
+  priceIndex        Float    @default(1)
+  priceIndexYearAgo Float    @default(1)
+  creditOutstanding BigInt   @default(0)
+  creditPrev        BigInt   @default(0)
+  avgAttractiveness Float    @default(0.5)
+  createdAt         DateTime @default(now())
+}
+
+model TickRun {
+  tick        Int       @id
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  durationMs  Int?
+  phases      Json      @default("{}")
+}
+
+model Account {
+  id            String    @id @default(cuid())
+  ownerType     OwnerType
+  ownerId       String
+  balance       BigInt    @default(0)
+  /// Разрешен ли е отрицателен баланс (само системни сметки и градски бюджет с дефицит)
+  allowNegative Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  @@unique([ownerType, ownerId])
+}
+
+model LedgerEntry {
+  id             BigInt   @id @default(autoincrement())
+  idempotencyKey String   @unique
+  fromAccountId  String
+  toAccountId    String
+  amount         BigInt
+  kind           String
+  refType        String?
+  refId          String?
+  memo           String?
+  tick           Int
+  createdAt      DateTime @default(now())
+
+  @@index([fromAccountId, id])
+  @@index([toAccountId, id])
+  @@index([kind, tick])
+}
+
+model City {
+  id                 String      @id @default(cuid())
+  name               String
+  ownerId            String
+  owner              User        @relation(fields: [ownerId], references: [id])
+  originX            Int
+  originY            Int
+  tiles              Json        @default("{}")
+  pop                Json
+  policy             Json
+  stats              Json        @default("{}")
+  derived            Json        @default("{}")
+  version            Int         @default(0)
+  lastTick           Int         @default(-1)
+  foundedTick        Int         @default(0)
+  deficitDays        Int         @default(0)
+  receivership       Boolean     @default(false)
+  /// Последното строителство (предишно/ново състояние на плочките и цена) – за „Отмени“
+  lastBuild          Json?
+  retailSatisfaction Float       @default(1)
+  createdAt          DateTime    @default(now())
+  parcels            Parcel[]
+  issues             CityIssue[]
+
+  @@index([ownerId])
+  @@index([originX, originY])
+}
+
+/// Сигнал от гражданин за проблем в града (дупка, спукана тръба, боклук...). Играчът изпраща екип, който го отстранява.
+model CityIssue {
+  id           String  @id @default(cuid())
+  cityId       String
+  city         City    @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  kind         String
+  x            Int
+  y            Int
+  /// 1..3 – расте, ако проблемът не се отстранява
+  severity     Int     @default(1)
+  /// OPEN | FIXING | RESOLVED
+  status       String  @default("OPEN")
+  reporter     String
+  message      String
+  createdTick  Int
+  fixDoneTick  Int?
+  resolvedTick Int?
+  /// AUTO – отшумял сам (напр. катастрофа, разчистена от полицията)
+  resolvedBy   String?
+  cost         BigInt  @default(0)
+
+  @@unique([cityId, kind, x, y, createdTick])
+  @@index([cityId, status])
+}
+
+/// Магистрала между два града (aId < bId). Поевтинява и ускорява превоза на стоки между тях.
+model CityLink {
+  id          String   @id @default(cuid())
+  aId         String
+  bId         String
+  builtById   String
+  /// дължина в плочки (разстоянието между центровете на градовете)
+  length      Int
+  cost        BigInt
+  createdTick Int
+  createdAt   DateTime @default(now())
+
+  @@unique([aId, bId])
+  @@index([bId])
+}
+
+/// Неделима единица собственост. Първичният ключ (px, py) гарантира, че два града не могат да притежават един парцел.
+model Parcel {
+  px         Int
+  py         Int
+  cityId     String
+  city       City     @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  acquiredAt DateTime @default(now())
+  price      BigInt   @default(0)
+
+  @@id([px, py])
+  @@index([cityId])
+}
+
+model CityStat {
+  cityId String
+  tick   Int
+  data   Json
+
+  @@id([cityId, tick])
+}
+
+model Company {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  founderId       String
+  hqCityId        String
+  totalShares     Int
+  status          String   @default("ACTIVE")
+  parentCompanyId String?
+  creditScore     Int      @default(70)
+  rating          String   @default("A")
+  missedPayments  Int      @default(0)
+  lastTick        Int      @default(-1)
+  createdTick     Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([founderId])
+}
+
+model Shareholding {
+  companyId  String
+  holderType OwnerType
+  holderId   String
+  shares     Int
+  reserved   Int       @default(0)
+
+  @@id([companyId, holderType, holderId])
+  @@index([holderType, holderId])
+}
+
+model CompanyRole {
+  companyId String
+  userId    String
+  role      String
+  createdAt DateTime @default(now())
+
+  @@id([companyId, userId, role])
+  @@index([userId])
+}
+
+model Facility {
+  id            String @id @default(cuid())
+  companyId     String
+  cityId        String
+  type          String
+  x             Int
+  y             Int
+  condition     Float  @default(1)
+  upgrades      Int    @default(0)
+  carry         Float  @default(0)
+  staffing      Float  @default(0)
+  power         Float  @default(0)
+  water         Float  @default(0)
+  utilityCharge Int    @default(0)
+  lastEnergy    Int    @default(0)
+  lastRuns      Int    @default(0)
+  limitedBy     String @default("idle")
+  builtTick     Int    @default(0)
+  cost          BigInt @default(0)
+
+  @@unique([x, y])
+  @@index([companyId])
+  @@index([cityId])
+}
+
+model Inventory {
+  companyId String
+  cityId    String
+  good      String
+  quantity  Int    @default(0)
+  reserved  Int    @default(0)
+  avgCost   Int    @default(0)
+
+  @@id([companyId, cityId, good])
+  @@index([cityId])
+}
+
+model MarketState {
+  instrument  String  @id
+  refPrice    BigInt
+  lastPrice   BigInt?
+  dayVolume   Int     @default(0)
+  unmetDemand Int     @default(0)
+  dayImports  Int     @default(0)
+  dayExports  Int     @default(0)
+}
+
+model MarketOrder {
+  id         BigInt    @id @default(autoincrement())
+  instrument String
+  side       String
+  price      BigInt
+  quantity   Int
+  remaining  Int
+  traderType OwnerType
+  traderId   String
+  userId     String
+  cityId     String?
+  /// Пари в ескроу за BUY поръчки (остатък)
+  escrow     BigInt    @default(0)
+  status     String    @default("OPEN")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([instrument, side, status, price])
+  @@index([traderType, traderId, status])
+}
+
+model Trade {
+  id          BigInt    @id @default(autoincrement())
+  instrument  String
+  price       BigInt
+  quantity    Int
+  buyOrderId  BigInt?
+  sellOrderId BigInt?
+  buyerType   OwnerType
+  buyerId     String
+  sellerType  OwnerType
+  sellerId    String
+  kind        String    @default("BOOK")
+  tick        Int
+  createdAt   DateTime  @default(now())
+
+  @@index([instrument, id])
+  @@index([buyerId])
+  @@index([sellerId])
+}
+
+model PriceHistory {
+  instrument String
+  tick       Int
+  ref        BigInt
+  last       BigInt?
+  volume     Int
+  unmet      Int     @default(0)
+
+  @@id([instrument, tick])
+}
+
+model Shipment {
+  id         String   @id @default(cuid())
+  companyId  String
+  good       String
+  quantity   Int
+  fromCityId String
+  toCityId   String
+  departTick Int
+  arriveTick Int
+  cost       BigInt   @default(0)
+  status     String   @default("IN_TRANSIT")
+  refType    String?
+  refId      String?
+  createdAt  DateTime @default(now())
+
+  @@index([status, arriveTick])
+  @@index([companyId])
+}
+
+model Contract {
+  id                  String   @id @default(cuid())
+  sellerCompanyId     String
+  buyerCompanyId      String
+  good                String
+  quantityPerDelivery Int
+  pricePerUnit        BigInt
+  intervalDays        Int
+  deliveriesTotal     Int
+  deliveriesDone      Int      @default(0)
+  misses              Int      @default(0)
+  penaltyPerMiss      BigInt
+  fromCityId          String
+  toCityId            String
+  status              String   @default("PROPOSED")
+  proposedById        String
+  proposedBySide      String
+  nextDueTick         Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([sellerCompanyId])
+  @@index([buyerCompanyId])
+  @@index([status, nextDueTick])
+}
+
+model Loan {
+  id              String    @id @default(cuid())
+  lenderAccountId String
+  borrowerType    OwnerType
+  borrowerId      String
+  principal       BigInt
+  outstanding     BigInt
+  annualRate      Float
+  termDays        Int
+  payment         BigInt
+  nextDueTick     Int
+  missed          Int       @default(0)
+  status          String    @default("ACTIVE")
+  restructured    Boolean   @default(false)
+  createdTick     Int
+  createdAt       DateTime  @default(now())
+
+  @@index([borrowerType, borrowerId])
+  @@index([status, nextDueTick])
+}
+
+model Proposal {
+  id          String   @id @default(cuid())
+  scopeType   String
+  scopeId     String
+  kind        String
+  payload     Json
+  proposerId  String
+  status      String   @default("OPEN")
+  result      String?
+  expiresTick Int
+  createdAt   DateTime @default(now())
+  votes       Vote[]
+
+  @@index([scopeType, scopeId, status])
+}
+
+model Vote {
+  proposalId String
+  proposal   Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  voterId    String
+  approve    Boolean
+  weight     Int
+  createdAt  DateTime @default(now())
+
+  @@id([proposalId, voterId])
+}
+
+model ResearchProject {
+  id           String   @id @default(cuid())
+  companyId    String?
+  cityId       String?
+  techId       String
+  progress     Float    @default(0)
+  requiredDays Int
+  dailyCost    BigInt
+  status       String   @default("ACTIVE")
+  startedTick  Int
+  createdAt    DateTime @default(now())
+
+  @@index([companyId])
+  @@index([status])
+}
+
+model Patent {
+  id             String  @id @default(cuid())
+  techId         String  @unique
+  ownerCompanyId String?
+  public         Boolean @default(false)
+  licenseFee     BigInt  @default(0)
+  grantedTick    Int
+  expiresTick    Int
+}
+
+model License {
+  patentId    String
+  companyId   String
+  startedTick Int
+  status      String @default("ACTIVE")
+
+  @@id([patentId, companyId])
+}
+
+model Alliance {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String   @default("")
+  leaderId    String
+  createdAt   DateTime @default(now())
+}
+
+model AllianceMember {
+  allianceId String
+  userId     String   @unique
+  role       String   @default("MEMBER")
+  joinedAt   DateTime @default(now())
+
+  @@id([allianceId, userId])
+}
+
+model AllianceInvite {
+  id         String   @id @default(cuid())
+  allianceId String
+  userId     String
+  status     String   @default("PENDING")
+  createdAt  DateTime @default(now())
+
+  @@index([userId, status])
+}
+
+model AllianceSanction {
+  allianceId   String
+  targetUserId String
+  createdAt    DateTime @default(now())
+
+  @@id([allianceId, targetUserId])
+}
+
+model ChatMessage {
+  id        BigInt   @id @default(autoincrement())
+  channel   String
+  senderId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([channel, id])
+}
+
+model Friendship {
+  requesterId String
+  addresseeId String
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+
+  @@id([requesterId, addresseeId])
+}
+
+model Block {
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  @@id([blockerId, blockedId])
+}
+
+model Report {
+  id           String   @id @default(cuid())
+  reporterId   String
+  targetUserId String
+  messageId    String?
+  reason       String
+  status       String   @default("OPEN")
+  createdAt    DateTime @default(now())
+}
+
+model Notification {
+  id        BigInt   @id @default(autoincrement())
+  userId    String
+  kind      String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, id])
+}
+
+model WorldEvent {
+  id        BigInt   @id @default(autoincrement())
+  tick      Int
+  kind      String
+  message   String
+  cityId    String?
+  userId    String?
+  public    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([tick])
+  @@index([cityId, id])
+}
+
+model CompanyStat {
+  companyId String
+  tick      Int
+  data      Json
+
+  @@id([companyId, tick])
+}
+
+model IdempotencyRecord {
+  userId    String
+  key       String
+  response  Json
+  createdAt DateTime @default(now())
+
+  @@id([userId, key])
+}
+
+model AuditLog {
+  id        BigInt   @id @default(autoincrement())
+  userId    String?
+  action    String
+  details   Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, id])
+}
+
+/// Лиз за единствен активен симулационен worker (защита от дублирана обработка при няколко инстанции).
+model WorkerLease {
+  id        Int      @id @default(1)
+  holder    String
+  expiresAt DateTime
+}

@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [
+    { "path": "../shared" },
+    { "path": "../world-generation" },
+    { "path": "../economy-engine" },
+    { "path": "../game-simulation" },
+    { "path": "../database" }
+  ]
+}

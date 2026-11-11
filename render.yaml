@@ -1,0 +1,49 @@
+# Render Blueprint: уеб услуга (API + клиент), фонов worker и управлявана PostgreSQL база.
+# Разполагане: свържете GitHub хранилището в Render -> New -> Blueprint. Вижте docs/deployment/README.md.
+databases:
+  - name: gce-db
+    plan: basic-256mb
+    postgresMajorVersion: '17'
+    databaseName: gce
+    user: gce
+
+services:
+  - type: web
+    name: gce-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gce-db
+          property: connectionString
+      - key: WORLD_SEED
+        value: gce-alpha-1
+      - key: TICK_INTERVAL_MS
+        value: '20000'
+      - key: CORS_ORIGINS
+        sync: false
+      - key: DEV_EXPOSE_RESET_TOKEN
+        value: 'false'
+
+  - type: worker
+    name: gce-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: node apps/worker/dist/main.js
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gce-db
+          property: connectionString
+      - key: WORLD_SEED
+        value: gce-alpha-1
+      - key: TICK_INTERVAL_MS
+        value: '20000'

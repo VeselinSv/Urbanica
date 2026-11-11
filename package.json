@@ -1,0 +1,50 @@
+{
+  "name": "global-city-economy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Urbanica – постоянна онлайн градостроителна и икономическа стратегия. Построй държава от нулата.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "npm run db:generate && tsc -b packages/shared packages/world-generation packages/economy-engine packages/game-simulation packages/database packages/domain apps/api apps/worker && npm run build -w @gce/web",
+    "build:server": "npm run db:generate && tsc -b apps/api apps/worker",
+    "typecheck": "tsc -b apps/api apps/worker && npm run typecheck -w @gce/web",
+    "db:start": "node scripts/dev-db.mjs",
+    "db:generate": "node scripts/prisma.mjs generate",
+    "db:migrate": "node scripts/prisma.mjs migrate deploy",
+    "db:migrate:dev": "node scripts/prisma.mjs migrate dev",
+    "db:seed": "node apps/worker/dist/seed.js",
+    "db:backup": "node scripts/db-backup.mjs",
+    "db:restore": "node scripts/db-restore.mjs",
+    "dev:api": "node --enable-source-maps apps/api/dist/main.js",
+    "dev:worker": "node --enable-source-maps apps/worker/dist/main.js",
+    "dev:web": "npm run dev -w @gce/web",
+    "start:api": "node apps/api/dist/main.js",
+    "start:worker": "node apps/worker/dist/main.js",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:econ": "node apps/worker/dist/econ-sim.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^22.20.5",
+    "embedded-postgres": "^17.11.0-beta.19",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^15.15.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^3.2.7"
+  },
+  "author": "Веселин Стоянов"
+}

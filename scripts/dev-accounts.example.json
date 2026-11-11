@@ -1,0 +1,20 @@
+{
+  "_comment": "Тестови акаунти само за локална разработка (localhost). Никога не ги използвайте в production.",
+  "accounts": [
+    {
+      "username": "Tester1",
+      "email": "tester1@example.test",
+      "password": "dev-pass-Tester1"
+    },
+    {
+      "username": "Tester2",
+      "email": "tester2@example.test",
+      "password": "dev-pass-Tester2"
+    },
+    {
+      "username": "Tester3",
+      "email": "tester3@example.test",
+      "password": "dev-pass-Tester3"
+    }
+  ]
+}

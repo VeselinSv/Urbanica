@@ -1,0 +1,26 @@
+{
+  "name": "@gce/api",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "dependencies": {
+    "@gce/database": "0.1.0",
+    "@gce/domain": "0.1.0",
+    "@gce/shared": "0.1.0",
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.0",
+    "@nestjs/platform-socket.io": "^11.1.0",
+    "@nestjs/throttler": "^6.4.0",
+    "@nestjs/websockets": "^11.1.0",
+    "pg": "^8.23.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "socket.io": "^4.8.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/pg": "^8.23.1"
+  }
+}

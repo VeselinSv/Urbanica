@@ -1,0 +1,11 @@
+{
+  "name": "@gce/worker",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "dependencies": {
+    "@gce/domain": "0.1.0",
+    "@gce/shared": "0.1.0",
+    "@gce/database": "0.1.0"
+  }
+}

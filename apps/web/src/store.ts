@@ -1,0 +1,234 @@
+import { useSyncExternalStore } from 'react';
+import type { CityPolicy, CityStats, PopulationState, TileMap, WorldInfo } from '@gce/shared';
+import { get } from './api';
+
+export interface Me {
+  user: { id: string; username: string; email: string; role: string };
+  wallet: number;
+}
+
+export interface CityDetail {
+  id: string;
+  name: string;
+  ownerId: string;
+  ownerName: string;
+  originX: number;
+  originY: number;
+  parcels: { px: number; py: number }[];
+  tiles: TileMap;
+  isOwner: boolean;
+  treasury?: number;
+  pop?: PopulationState;
+  policy?: CityPolicy;
+  stats?: Partial<CityStats> & { retailDemand?: Record<string, number> };
+  receivership?: boolean;
+  deficitDays?: number;
+  publicStats: Record<string, unknown>;
+  publicPolicy: { taxes: CityPolicy['taxes']; importTariff: number };
+}
+
+export interface CompanyBrief {
+  id: string;
+  name: string;
+  status: string;
+  rating: string;
+  hqCityId: string;
+  cash: number | null;
+  roles: string[];
+  shares: number;
+  totalShares: number;
+}
+
+export type Tool =
+  | { kind: 'select' }
+  | { kind: 'found'; name: string }
+  | { kind: 'road'; cls?: 'street' | 'avenue' | 'highway' | 'rural' | 'industrial' }
+  | { kind: 'junction'; control: 'roundabout' | 'signals' | 'none' }
+  /** Тротоари върху път / пешеходна алея на празна земя; remove – премахва. */
+  | { kind: 'sidewalk'; remove?: boolean }
+  /** Автобусна спирка върху път; remove – премахва. */
+  | { kind: 'busstop'; remove?: boolean }
+  | { kind: 'zone'; zone: string }
+  | { kind: 'dezone' }
+  | { kind: 'service'; service: string }
+  | { kind: 'facility'; facility: string }
+  | { kind: 'bulldoze' }
+  | { kind: 'parcel' };
+
+export type Layer = 'none' | 'ownership' | 'resources' | 'zoning' | 'landValue' | 'traffic' | 'power' | 'water' | 'pollution' | 'activity';
+
+export interface Toast {
+  id: number;
+  kind: 'info' | 'error' | 'success' | 'warning';
+  text: string;
+}
+
+export interface Issue {
+  id: string;
+  kind: string;
+  x: number;
+  y: number;
+  severity: number;
+  status: 'OPEN' | 'FIXING' | 'RESOLVED';
+  reporter: string;
+  message: string;
+  createdTick: number;
+  fixDoneTick: number | null;
+  resolvedTick: number | null;
+  resolvedBy: string | null;
+  fixCost: number;
+}
+
+export interface State {
+  me: Me | null;
+  world: WorldInfo | null;
+  /** Стъпка на въведението (null – скрито). */
+  tutorial: number | null;
+  cities: { id: string; name: string; ownerId: string; originX: number; originY: number; population: number }[];
+  activeCityId: string | null;
+  city: CityDetail | null;
+  companies: CompanyBrief[];
+  activeCompanyId: string | null;
+  tool: Tool;
+  layer: Layer;
+  panel: string;
+  selected: { x: number; y: number } | null;
+  toasts: Toast[];
+  unread: number;
+  tick: number;
+  focus: { x: number; y: number; n: number } | null;
+  panelOpen: boolean;
+  /** Отворени сигнали от гражданите на активния град (само за кмета). */
+  issues: Issue[];
+  recentIssues: Issue[];
+  selectedIssue: string | null;
+}
+
+let state: State = {
+  me: null,
+  world: null,
+  tutorial: (() => {
+    try {
+      return localStorage.getItem('gce_tutorial_done') ? null : 0;
+    } catch {
+      return null;
+    }
+  })(),
+  cities: [],
+  activeCityId: null,
+  city: null,
+  companies: [],
+  activeCompanyId: null,
+  tool: { kind: 'select' },
+  layer: 'none',
+  panel: 'city',
+  selected: null,
+  toasts: [],
+  unread: 0,
+  tick: 0,
+  focus: null,
+  // на телефон панелът започва затворен, за да се вижда картата
+  panelOpen: typeof window === 'undefined' || window.innerWidth > 760,
+  issues: [],
+  recentIssues: [],
+  selectedIssue: null,
+};
+
+const listeners = new Set<() => void>();
+export function getState() {
+  return state;
+}
+export function setState(patch: Partial<State> | ((s: State) => Partial<State>)) {
+  const p = typeof patch === 'function' ? patch(state) : patch;
+  state = { ...state, ...p };
+  for (const l of listeners) l();
+}
+export function subscribe(l: () => void) {
+  listeners.add(l);
+  return () => listeners.delete(l);
+}
+export function useStore<T>(sel: (s: State) => T): T {
+  return useSyncExternalStore(subscribe, () => sel(state));
+}
+
+let toastId = 0;
+export function toast(text: string, kind: Toast['kind'] = 'info') {
+  const id = ++toastId;
+  setState((s) => ({ toasts: [...s.toasts.slice(-4), { id, kind, text }] }));
+  setTimeout(() => setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), kind === 'error' ? 6000 : 4000);
+}
+
+export function errorToast(e: unknown) {
+  toast(e instanceof Error ? e.message : String(e), 'error');
+}
+
+// ---------------- Зареждане на данни ----------------
+
+export async function refreshMe() {
+  const me = await get<Me>('/auth/me');
+  setState({ me });
+  return me;
+}
+
+export async function refreshCities() {
+  const cities = await get<State['cities']>('/cities?mine=1');
+  setState((s) => ({ cities, activeCityId: s.activeCityId && cities.some((c) => c.id === s.activeCityId) ? s.activeCityId : (cities[0]?.id ?? null) }));
+  return cities;
+}
+
+export async function refreshCity() {
+  const id = state.activeCityId;
+  if (!id) {
+    setState({ city: null });
+    return null;
+  }
+  const city = await get<CityDetail>(`/cities/${id}`);
+  if (state.activeCityId === id) setState({ city });
+  if (city.isOwner) await refreshIssues();
+  else setState({ issues: [], recentIssues: [] });
+  return city;
+}
+
+export async function refreshIssues() {
+  const id = state.activeCityId;
+  if (!id) return;
+  try {
+    const r = await get<{ open: Issue[]; recent: Issue[] }>(`/cities/${id}/issues`);
+    if (state.activeCityId === id) setState({ issues: r.open, recentIssues: r.recent });
+  } catch {
+    /* не е кмет или мрежова грешка */
+  }
+}
+
+export async function refreshCompanies() {
+  const companies = await get<CompanyBrief[]>('/companies/mine');
+  setState((s) => ({
+    companies,
+    activeCompanyId:
+      s.activeCompanyId && companies.some((c) => c.id === s.activeCompanyId) ? s.activeCompanyId : (companies.find((c) => c.roles.length)?.id ?? null),
+  }));
+  return companies;
+}
+
+export async function refreshAll() {
+  const [world] = await Promise.all([get<WorldInfo>('/world'), refreshMe(), refreshCities(), refreshCompanies()]);
+  setState({ world, tick: world.tick });
+  await refreshCity();
+}
+
+/** Сигнал "версия на данните" – панелите го използват, за да се презареждат при нов тик. */
+let dataVersion = 0;
+const versionListeners = new Set<() => void>();
+export function bumpData() {
+  dataVersion++;
+  for (const l of versionListeners) l();
+}
+export function useDataVersion() {
+  return useSyncExternalStore(
+    (l) => {
+      versionListeners.add(l);
+      return () => versionListeners.delete(l);
+    },
+    () => dataVersion,
+  );
+}

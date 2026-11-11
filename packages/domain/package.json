@@ -1,0 +1,14 @@
+{
+  "name": "@gce/domain",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@gce/shared": "0.1.0",
+    "@gce/world-generation": "0.1.0",
+    "@gce/economy-engine": "0.1.0",
+    "@gce/game-simulation": "0.1.0",
+    "@gce/database": "0.1.0"
+  }
+}
