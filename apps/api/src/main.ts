@@ -24,7 +24,9 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: ['log', 'warn', 'error'] });
   app.set('trust proxy', 1);
   app.useBodyParser('json', { limit: '256kb' });
-  app.enableCors({ origin: (process.env.CORS_ORIGINS ?? 'http://localhost:5173').split(','), credentials: true });
+  // CORS: изрично зададени адреси, иначе публичният адрес от Render (RENDER_EXTERNAL_URL), иначе локалният Vite.
+  const origins = (process.env.CORS_ORIGINS ?? process.env.RENDER_EXTERNAL_URL ?? 'http://localhost:5173').split(',');
+  app.enableCors({ origin: origins, credentials: true });
   app.enableShutdownHooks();
 
   // Заглавки за сигурност и метрики за всяка заявка.
@@ -65,6 +67,14 @@ async function bootstrap() {
 
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port, '0.0.0.0');
+  // Безплатно хостване: симулацията върви в същия процес (без отделен worker).
+  if (process.env.EMBEDDED_WORKER === 'true') {
+    const { runSimulationLoop } = await import('@gce/domain');
+    const sim = runSimulationLoop(prisma, (level, msg, extra = {}) =>
+      console.log(JSON.stringify({ t: new Date().toISOString(), level, svc: 'api-sim', msg, ...extra })),
+    );
+    process.once('SIGTERM', () => void sim.stop());
+  }
   console.log(
     JSON.stringify({ t: new Date().toISOString(), level: 'info', svc: 'api', msg: `API listening on :${port}`, web: existsSync(join(webDist, 'index.html')) }),
   );

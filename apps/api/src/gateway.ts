@@ -9,7 +9,10 @@ import { metrics, prisma } from './common';
  * WebSocket шлюз (socket.io). Събитията идват от PostgreSQL LISTEN/NOTIFY (worker и API процеси),
  * затова клиентите получават само потвърдени (commit-нати) промени. Стаи: user:<id>, chan:<channel>, world.
  */
-@WebSocketGateway({ path: '/socket.io', cors: { origin: (process.env.CORS_ORIGINS ?? 'http://localhost:5173').split(','), credentials: true } })
+@WebSocketGateway({
+  path: '/socket.io',
+  cors: { origin: (process.env.CORS_ORIGINS ?? process.env.RENDER_EXTERNAL_URL ?? 'http://localhost:5173').split(','), credentials: true },
+})
 export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
   @WebSocketServer() server!: Server;
   private readonly log = new Logger('Gateway');

@@ -16,4 +16,5 @@ export * from './contracts';
 export * from './governance';
 export * from './social';
 export * from './simulation';
+export * from './simloop';
 export * from './analytics';

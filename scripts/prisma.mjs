@@ -5,6 +5,8 @@ import { createRequire } from 'node:module';
 import { loadEnv } from './env.mjs';
 
 loadEnv();
+// `generate` не се свързва с базата – при билд (напр. Docker) адресът може да липсва.
+if (!process.env.DATABASE_URL && process.argv[2] === 'generate') process.env.DATABASE_URL = 'postgresql://build:build@localhost:5432/build';
 if (!process.env.DATABASE_URL) {
   console.error('[prisma] Липсва DATABASE_URL. Копирайте .env.example в .env (Windows: copy .env.example .env).');
   process.exit(1);
