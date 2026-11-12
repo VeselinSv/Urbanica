@@ -16,11 +16,12 @@ import {
 } from '@gce/shared';
 import { MapView, undoLast } from '../map/MapView';
 import { Tutorial } from './Tutorial';
-import { getState, setState, useStore, type Layer, type Tool } from '../store';
+import { errorToast, getState, setState, useStore, type Layer, type Tool } from '../store';
 import { dateLabel, money, num, pct } from '../format';
 import { Panels, PANEL_GROUPS, groupOf } from './panels/Panels';
 import { IssueCard, initials } from './panels/IssuesPanel';
 import { BRAND, BrandLockup } from './Brand';
+import { resetGame } from './reset';
 import { REQ_ICON, needsLine, reqTool, reqToolLabel, toolNeeds } from './needs';
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
@@ -40,6 +41,7 @@ function Gauge({ value, color }: { value: number; color: string }) {
 
 function TopBar() {
   const me = useStore((s) => s.me);
+  const [menu, setMenu] = useState(false);
   const city = useStore((s) => s.city);
   const tick = useStore((s) => s.tick);
   const cities = useStore((s) => s.cities);
@@ -124,10 +126,37 @@ function TopBar() {
         <span className="wallet" title="Личен портфейл">
           👛 {money(me?.wallet)}
         </span>
-        <span className="avatar" title={me?.user.username}>
+        <button className="avatar" title={`${me?.user.username ?? ''} – меню`} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>
           {initials(me?.user.username ?? '?')}
-        </span>
+        </button>
         <span className="player-name">{me?.user.username}</span>
+        {menu && (
+          <div className="user-menu glass" role="menu" onMouseLeave={() => setMenu(false)}>
+            <div className="um-head">
+              <b>{me?.user.username}</b>
+              <small>👛 {money(me?.wallet)}</small>
+            </div>
+            <button
+              role="menuitem"
+              onClick={() => {
+                setMenu(false);
+                setState({ tutorial: 0 });
+              }}
+            >
+              ❓ Въведение
+            </button>
+            <button
+              role="menuitem"
+              className="danger"
+              onClick={() => {
+                setMenu(false);
+                void resetGame().catch(errorToast);
+              }}
+            >
+              ↺ Започни отначало
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );

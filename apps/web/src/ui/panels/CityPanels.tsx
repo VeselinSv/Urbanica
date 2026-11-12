@@ -22,6 +22,7 @@ import { KIND_LABELS, money, num, pct, toCents } from '../../format';
 import { AsyncButton, DemandBar, Field, Meter, Section, Stat, Table, useApi } from '../common';
 import { describeTile } from '../../map/MapView';
 import { REQ_ICON, reqTool, reqToolLabel } from '../needs';
+import { resetGame } from '../reset';
 
 const EDU = ['Основно (L0)', 'Средно (L1)', 'Висше (L2)'];
 
@@ -128,17 +129,7 @@ function ResetGame() {
         Започнете отначало: градовете и компаниите ви се изтриват, а получавате отново {money(BALANCE.start.wallet)} в портфейла и{' '}
         {money(BALANCE.start.cityTreasury)} за нов град. Не може да се отмени.
       </p>
-      <AsyncButton
-        className="btn danger small"
-        onClick={async () => {
-          if (!window.confirm('Сигурни ли сте? Всичките ви градове и компании ще бъдат изтрити и започвате отначало.')) return;
-          const r = await post<{ cities: number; companies: number }>('/auth/reset', {});
-          toast(`Нова игра: изтрити ${r.cities} града и ${r.companies} компании. Изберете място за нов град.`, 'success');
-          setState({ city: null, tool: { kind: 'found', name: '' }, tutorial: 0 });
-          await refreshAll();
-          bumpData();
-        }}
-      >
+      <AsyncButton className="btn danger small" onClick={resetGame}>
         ↺ Започни отначало
       </AsyncButton>
     </Section>

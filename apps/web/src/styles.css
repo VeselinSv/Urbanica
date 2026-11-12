@@ -1127,7 +1127,8 @@ td {
     height: 38px;
   }
   .user .avatar {
-    display: none;
+    width: 36px;
+    height: 36px;
   }
   .toolbar.dock {
     top: auto;
@@ -1698,4 +1699,73 @@ kbd {
 }
 .btn.danger:hover {
   background: rgba(239, 68, 68, 0.3);
+}
+
+/* ---------- меню на играча (аватар) ---------- */
+.user {
+  position: relative;
+}
+button.avatar {
+  padding: 0;
+  border: none;
+  cursor: pointer;
+}
+button.avatar:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 0 0 2px #ffffff33;
+}
+.user-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 60;
+  min-width: 220px;
+  background: rgba(11, 18, 34, 0.97);
+  padding: 8px;
+  border-radius: 14px;
+  border: 1px solid var(--glass-line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.user-menu .um-head {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 8px 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+.user-menu button {
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.user-menu button:hover {
+  background: #ffffff12;
+}
+.user-menu button.danger {
+  color: #fca5a5;
+}
+
+/* панелът се превърта докрай: място под последния бутон (на телефон – над долната лента и лентата на браузъра) */
+.side-body {
+  min-height: 0;
+  padding-bottom: 40px;
+  overscroll-behavior: contain;
+}
+@media (max-width: 760px) {
+  .side-body {
+    padding-bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
+  }
+  .user-menu {
+    position: fixed;
+    top: 56px;
+    right: 8px;
+  }
 }
