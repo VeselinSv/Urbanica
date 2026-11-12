@@ -179,7 +179,8 @@ export async function refreshCities() {
 export async function refreshCity() {
   const id = state.activeCityId;
   if (!id) {
-    setState({ city: null });
+    // няма град (напр. след „Започни отначало“) – нищо от стария град не остава на екрана
+    setState({ city: null, issues: [], recentIssues: [], selectedIssue: null, selected: null });
     return null;
   }
   const city = await get<CityDetail>(`/cities/${id}`);

@@ -13,7 +13,23 @@ export async function resetGame() {
   if (!ok) return;
   const r = await post<{ cities: number; companies: number }>('/auth/reset', {});
   toast(`Нова игра: изтрити ${r.cities} града и ${r.companies} компании. Изберете място за нов град.`, 'success');
-  setState({ city: null, tool: { kind: 'found', name: '' }, tutorial: 0, panelOpen: false });
+  // всичко от старата игра изчезва и от екрана: град, сигнали, маркери, избрани плочки, известия
+  setState({
+    city: null,
+    activeCityId: null,
+    activeCompanyId: null,
+    issues: [],
+    recentIssues: [],
+    selectedIssue: null,
+    selected: null,
+    focus: null,
+    unread: 0,
+    layer: 'none',
+    panel: 'city',
+    tool: { kind: 'found', name: '' },
+    tutorial: 0,
+    panelOpen: false,
+  });
   await refreshAll();
   bumpData();
 }

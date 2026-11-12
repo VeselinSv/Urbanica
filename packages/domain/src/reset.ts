@@ -2,7 +2,9 @@
  * „Започни отначало“: играчът изоставя всичко и получава нов старт.
  *  - компаниите, на които е CEO, се закриват: отворените поръчки се отменят (ескроу се връща), съоръженията,
  *    наличностите и доставките изчезват, договорите се прекратяват, кредитите се отписват, парите отиват в системата;
- *  - градовете му се изтриват (парцелите, сигналите, статистиката и магистралите – каскадно); бюджетът се нулира;
+ *  - градовете му се изтриват заедно с всичко, свързано с тях: парцели и сигнали (каскадно), статистика, магистрали,
+ *    изследвания, събития; бюджетът се нулира;
+ *  - известията и събитията на играча се изтриват – нищо от старата игра не остава;
  *  - личните му поръчки се отменят, кредитите се отписват, портфейлът се връща на стартовия капитал.
  * Всички парични движения минават през регистъра – сумата на балансите остава 0.
  */
@@ -80,10 +82,20 @@ export async function resetPlayer(prisma: PrismaClient, userId: string) {
     // 3. градовете
     for (const c of cities) {
       await tx.loan.updateMany({ where: { borrowerType: 'CITY', borrowerId: c.id, status: 'ACTIVE' }, data: { status: 'WRITTEN_OFF', outstanding: 0n } });
-      await tx.researchProject.updateMany({ where: { cityId: c.id, status: 'ACTIVE' }, data: { status: 'CANCELLED' } });
       await zeroAccount(tx, acc.city(c.id), tick, `reset:city:${c.id}`);
     }
-    if (cityIds.length) await tx.city.deleteMany({ where: { id: { in: cityIds } } });
+    if (cityIds.length) {
+      // таблици без външен ключ към City – изчистват се изрично, за да не остане нищо от стария град
+      await tx.researchProject.deleteMany({ where: { cityId: { in: cityIds } } });
+      await tx.cityStat.deleteMany({ where: { cityId: { in: cityIds } } });
+      await tx.cityLink.deleteMany({ where: { OR: [{ aId: { in: cityIds } }, { bId: { in: cityIds } }] } });
+      await tx.worldEvent.deleteMany({ where: { cityId: { in: cityIds } } });
+      // парцелите и сигналите (CityIssue) се трият каскадно с града
+      await tx.city.deleteMany({ where: { id: { in: cityIds } } });
+    }
+    // известията (сигнали, кредити, търговия...) и събитията на играча от старата игра
+    await tx.notification.deleteMany({ where: { userId } });
+    await tx.worldEvent.deleteMany({ where: { userId } });
 
     // 4. личните кредити и портфейлът – отново стартовият капитал
     await tx.loan.updateMany({ where: { borrowerType: 'USER', borrowerId: userId, status: 'ACTIVE' }, data: { status: 'WRITTEN_OFF', outstanding: 0n } });

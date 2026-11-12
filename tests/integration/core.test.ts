@@ -15,6 +15,7 @@ import {
   worldGen,
   placeOrder,
   resetPlayer,
+  currentTick,
 } from '@gce/domain';
 import { BALANCE, ZONES, tileKey } from '@gce/shared';
 import { balance, cityWithRoad, companyIn, expectInvariants, player, prisma, resetDb } from './helpers';
@@ -211,7 +212,23 @@ describe('Град, строителство и собственост', () => {
     const co = await companyIn(p.id, city.id);
     // отворена поръчка за покупка – парите са в ескроу
     await placeOrder(prisma, p.id, { instrument: 'GOOD:coal', side: 'BUY', quantity: 5, price: 600 * 4.5, companyId: co.id, cityId: city.id });
+    // следи от стария град: сигнал, известие, статистика, магистрала, събитие
+    const tick = await currentTick(prisma);
+    await prisma.cityIssue.create({ data: { cityId: city.id, kind: 'pothole', x: 1, y: 1, reporter: 'Иван', message: 'Дупка', createdTick: tick } });
+    await prisma.notification.create({ data: { userId: p.id, kind: 'issue', message: 'проблемът се влошава' } });
+    await prisma.cityStat.create({ data: { cityId: city.id, tick, data: {} } });
+    const q = await player('ResetNeighbour');
+    const other = await foundCity(prisma, q.id, 'Съсед', { x: 300, y: 300 });
+    await prisma.cityLink.create({
+      data: { aId: [city.id, other.id].sort()[0], bId: [city.id, other.id].sort()[1], builtById: p.id, length: 10, cost: 0n, createdTick: tick },
+    });
     const res = await resetPlayer(prisma, p.id);
+    expect(await prisma.cityIssue.count({ where: { cityId: city.id } })).toBe(0);
+    expect(await prisma.notification.count({ where: { userId: p.id } })).toBe(0);
+    expect(await prisma.cityStat.count({ where: { cityId: city.id } })).toBe(0);
+    expect(await prisma.cityLink.count({ where: { OR: [{ aId: city.id }, { bId: city.id }] } })).toBe(0);
+    expect(await prisma.worldEvent.count({ where: { cityId: city.id } })).toBe(0);
+    expect(await prisma.parcel.count({ where: { cityId: city.id } })).toBe(0);
     expect(res.cities).toBe(1);
     expect(res.companies).toBe(1);
     expect(await prisma.city.count({ where: { ownerId: p.id } })).toBe(0);
