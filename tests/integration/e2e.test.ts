@@ -271,7 +271,8 @@ describe('E2E: пълен път на играча', () => {
     expect(after.data.stats.tick).toBeGreaterThan(before.data.stats.tick);
     expect(after.data.treasury).not.toBe(before.data.treasury);
     const hist = await call<{ series: unknown[] }>('GET', `/cities/${A.cityId}/history`, l.data.token);
-    expect(hist.data.series.length).toBeGreaterThan(10);
+    // точка в историята се пише на всеки 5 игрови дни (и при всяка пакетна обработка офлайн)
+    expect(hist.data.series.length).toBeGreaterThan(4);
   });
 
   it('сигурност: ограничаване на честотата и грешни данни', async () => {

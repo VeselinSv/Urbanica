@@ -118,18 +118,15 @@ export async function processCity(
       ctx,
     };
     const r: CityStepResult = days === 1 ? stepCity(input) : stepCityDays({ ...input, tick: city.lastTick + 1 }, Math.min(days, 60));
+    // Слоевете за картата (derived) и дневната статистика за графиките са тежки за записване –
+    // при ден от 1 секунда се записват на всеки 3 / 5 дни (и винаги при пакетна обработка на офлайн град).
+    const writeDerived = days > 1 || tick % 3 === 0;
+    const writeStat = days > 1 || tick % 5 === 0;
     const ok = await withTx(prisma, async (tx) => {
-      const upd = await tx.city.updateMany({
-        where: { id: cityId, version: city.version, lastTick: city.lastTick },
-        data: {
-          tiles: r.tiles as unknown as Prisma.InputJsonValue,
-          pop: r.pop as unknown as Prisma.InputJsonValue,
-          derived: r.derived as unknown as Prisma.InputJsonValue,
-          lastTick: tick,
-          version: { increment: 1 },
-        },
-      });
-      if (upd.count !== 1) return false;
+      // първо се заключва редът на града (в същия ред като при строене: град → сметка), без да се пише;
+      // ако играчът е строил междувременно – денят се смята отново
+      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM "City" WHERE id = ${cityId} AND version = ${city.version} AND "lastTick" = ${city.lastTick} FOR UPDATE`;
+      if (!locked.length) return false;
       const cityAcc = acc.city(cityId);
       // Един общ превод на ден (приходи − разходи): при ден от 1 секунда отделните видове биха били
       // десетки заявки и милиони редове. Разбивката по видове остава в статистиката на града.
@@ -182,12 +179,26 @@ export async function processCity(
         if (!defaulted) receivership = false;
       }
       const stats = { ...r.stats, tick, treasury, retailDemand: r.retailDemand };
-      await tx.city.update({ where: { id: cityId }, data: { stats: stats as unknown as Prisma.InputJsonValue, deficitDays, receivership } });
-      await tx.cityStat.upsert({
-        where: { cityId_tick: { cityId, tick } },
-        create: { cityId, tick, data: stats as unknown as Prisma.InputJsonValue },
-        update: {},
+      // един запис на града на ден
+      await tx.city.update({
+        where: { id: cityId },
+        data: {
+          tiles: r.tiles as unknown as Prisma.InputJsonValue,
+          pop: r.pop as unknown as Prisma.InputJsonValue,
+          ...(writeDerived ? { derived: r.derived as unknown as Prisma.InputJsonValue } : {}),
+          stats: stats as unknown as Prisma.InputJsonValue,
+          deficitDays,
+          receivership,
+          lastTick: tick,
+          version: { increment: 1 },
+        },
       });
+      if (writeStat)
+        await tx.cityStat.upsert({
+          where: { cityId_tick: { cityId, tick } },
+          create: { cityId, tick, data: stats as unknown as Prisma.InputJsonValue },
+          update: {},
+        });
       await advanceIssues(
         tx,
         { id: cityId, name: city.name, ownerId: city.ownerId, tiles: r.tiles, policy: city.policy as unknown as CityPolicy, stats: stats as never },
@@ -427,7 +438,9 @@ export async function processTick(prisma: PrismaClient): Promise<TickReport> {
 
   await time('cities', async () => {
     const active = await activeOwners(prisma);
-    const cities = await prisma.city.findMany({ select: { id: true, ownerId: true } });
+    const all = await prisma.city.findMany({ select: { id: true, ownerId: true, lastTick: true } });
+    // градовете на офлайн играчите се смятат на пакети (на всеки няколко дни) – иначе не се зареждат изобщо
+    const cities = all.filter((c) => active.has(c.ownerId) || tick - c.lastTick >= BALANCE.sim.inactiveBatch);
     const base = { worldAttractiveness: w.avgAttractiveness, coalPrice: refs.coal, foodPriceRatio: refs.food / GOODS.food.basePrice, priceIndex: pi };
     let n = 0;
     // по няколко града едновременно – времето на тика е времето на мрежата до базата, не на процесора
@@ -452,8 +465,11 @@ export async function processTick(prisma: PrismaClient): Promise<TickReport> {
   });
   await time('market', async () => {
     const cities = await prisma.city.findMany({ select: { id: true, stats: true } });
+    // стоки без отворени поръчки нямат сделки – за тях само цената се коригира, на всеки 5 дни
+    const open = await prisma.marketOrder.groupBy({ by: ['instrument'], where: { status: 'OPEN' }, _count: { _all: true } });
+    const traded = new Set(open.map((o) => o.instrument));
     await Promise.all(
-      GOOD_IDS.map((g) => {
+      GOOD_IDS.filter((g) => traded.has(`GOOD:${g}`) || tick % 5 === 0).map((g) => {
         const perCity = new Map<string, number>();
         let total = 0;
         for (const c of cities) {
