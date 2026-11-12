@@ -246,6 +246,7 @@ export function stepCity(input: CityInput): CityStepResult {
   const waterRatio = allocate(waterSupply, waterGroups);
   // Градът използва първо собствените централи, после изкупува от частните.
   const ownUsed = Math.min(citySupply, powerDemand);
+  const ownUsedForLoad = ownUsed;
   const purchased = Math.min(companySupply, Math.max(0, powerDemand - ownUsed));
   for (const s of services) {
     const d = SERVICES[s.type];
@@ -275,7 +276,25 @@ export function stepCity(input: CityInput): CityStepResult {
   const workers: Tri = pop.edu.map((e) => Math.floor(e * P.workforceShare)) as Tri;
   let jobs: Tri = [0, 0, 0];
   for (const z of zones) jobs = sumTri(jobs, z.jobs);
-  const serviceJobs: Tri = services.reduce((a, s) => sumTri(a, s.eff > 0 ? (SERVICES[s.type].staff as Tri) : [0, 0, 0]), [0, 0, 0] as Tri);
+  // Натовареност на всяка обществена сграда: малък град не плаща пълен щат на болницата.
+  // Персоналът и поддръжката растат с хората, които сградата реално обслужва (или с изразходвания ток/вода).
+  const countOf: Partial<Record<ServiceType, number>> = {};
+  for (const s of services) countOf[s.type] = (countOf[s.type] ?? 0) + 1;
+  const loadOf = (type: ServiceType): number => {
+    const n = countOf[type] ?? 1;
+    const S = BALANCE.serviceLoad;
+    let l: number;
+    if (SERVICES[type].powerSupply) l = citySupply > 0 ? ownUsedForLoad / citySupply : 0;
+    else if (SERVICES[type].waterSupply) l = waterSupply > 0 ? waterDemand / waterSupply : 0;
+    else l = totalPop / (n * (S.residentsServed[type] ?? 5000));
+    return clamp(l, S.min, 1);
+  };
+  const serviceLoad: Partial<Record<ServiceType, number>> = {};
+  for (const t of Object.keys(countOf) as ServiceType[]) serviceLoad[t] = loadOf(t);
+  const serviceJobs: Tri = services.reduce(
+    (a, s) => sumTri(a, s.eff > 0 ? ((SERVICES[s.type].staff as Tri).map((v) => Math.round(v * (serviceLoad[s.type] ?? 1))) as Tri) : [0, 0, 0]),
+    [0, 0, 0] as Tri,
+  );
   const facilityJobs: Tri = input.facilities.reduce((a, f) => sumTri(a, access.has(f.key) ? f.jobs : [0, 0, 0]), [0, 0, 0] as Tri);
   jobs = sumTri(sumTri(jobs, serviceJobs), facilityJobs);
   const labor = matchLabor(workers, jobs);
@@ -725,7 +744,12 @@ export function stepCity(input: CityInput): CityStepResult {
   income.utility_fees = Math.round(zonePower * policy.powerTariff * 0.5 + zoneWater * policy.waterTariff * 0.5);
 
   expenses.road_upkeep = Math.round(roadUpkeep);
-  expenses.service_upkeep = Math.round(services.reduce((a, s) => a + SERVICES[s.type].upkeep, 0) * budget);
+  expenses.service_upkeep = Math.round(
+    services.reduce(
+      (a, s) => a + SERVICES[s.type].upkeep * (BALANCE.serviceLoad.fixedUpkeep + (1 - BALANCE.serviceLoad.fixedUpkeep) * (serviceLoad[s.type] ?? 1)),
+      0,
+    ) * budget,
+  );
   expenses.service_wages = Math.round(servicePayroll * Math.min(1, budget + 0.25));
   expenses.fuel = Math.round(coalUsed * ctx.coalPrice);
   expenses.energy_purchases = Math.round(purchased * energyPrice);

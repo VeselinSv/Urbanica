@@ -19,22 +19,22 @@ export const BALANCE = {
     minDistanceBetweenCities: 24, // плочки
   },
   land: {
-    parcelBasePrice: eur(1_200_000),
+    parcelBasePrice: eur(600_000),
     /** Множител на цената за всеки парцел, който градът вече притежава (растяща цена на експанзията). */
     parcelGrowthFactor: 0.04,
     resourcePremium: 0.5,
   },
   construction: {
-    roadCost: eur(40_000), // улица за плочка (квартален блок): настилка, бордюри, осветление, мрежи
+    roadCost: eur(25_000), // улица за плочка (квартален блок): настилка, бордюри, осветление, мрежи
     bulldozeCost: eur(3_000),
     terrainCostMult: { plains: 1, forest: 1.3, hills: 1.6, mountains: 3, beach: 1.2, water: Infinity, deep_water: Infinity } as Record<string, number>,
     roadUpkeep: eur(4),
     /** Тротоари към съществуващ път (за плочка) и пешеходна алея (за плочка). */
-    sidewalkCost: eur(8_000),
+    sidewalkCost: eur(5_000),
     /** Автобусна спирка (навес и табела) и обхватът ѝ при наличие на автобусно депо. */
-    busStopCost: eur(15_000),
+    busStopCost: eur(10_000),
     busStopRadius: 4,
-    pathCost: eur(12_000),
+    pathCost: eur(8_000),
     /** Категории пътища: множител на цената, капацитет (спрямо улица) и поддръжка. */
     roadClasses: {
       street: { cost: 1, capacity: 1, upkeep: 1 },
@@ -45,8 +45,8 @@ export const BALANCE = {
     } as Record<string, { cost: number; capacity: number; upkeep: number }>,
     /** Управление на кръстовища: еднократна цена и допълнителен капацитет (пътувания). */
     junctions: {
-      roundabout: { cost: eur(300_000), capacity: 260 * POP, upkeep: eur(15) },
-      signals: { cost: eur(90_000), capacity: 150 * POP, upkeep: eur(8) },
+      roundabout: { cost: eur(200_000), capacity: 260 * POP, upkeep: eur(15) },
+      signals: { cost: eur(60_000), capacity: 150 * POP, upkeep: eur(8) },
     } as Record<string, { cost: number; capacity: number; upkeep: number }>,
   },
   population: {
@@ -107,10 +107,32 @@ export const BALANCE = {
   },
   /** Магистрали между градовете. */
   links: {
-    costPerTile: eur(150_000), // 150 000 € за плочка разстояние (регионален път)
+    costPerTile: eur(100_000), // 100 000 € за плочка разстояние (регионален път)
     maxLength: 160,
     /** Множител на цената и времето за превоз между свързани градове. */
     shippingMult: 0.5,
+  },
+  /**
+   * Натовареност на обществените сгради: персоналът и поддръжката им растат с хората, които обслужват,
+   * затова и малкото градче е на печалба. Пълен щат – при толкова жители на сграда (централите и помпите –
+   * при пълно използване на мощността им).
+   */
+  serviceLoad: {
+    min: 0.15,
+    /** Дял от поддръжката, който се плаща винаги (сградата стои), останалото – според натовареността. */
+    fixedUpkeep: 0.3,
+    residentsServed: {
+      school: 5_000,
+      university: 30_000,
+      clinic: 8_000,
+      police_station: 8_000,
+      fire_station: 8_000,
+      bus_depot: 10_000,
+      park: 2_000,
+      parking: 2_000,
+      sewage_plant: 15_000,
+      landfill: 15_000,
+    } as Record<string, number>,
   },
   /** Приходи на града извън данъците. */
   city: {

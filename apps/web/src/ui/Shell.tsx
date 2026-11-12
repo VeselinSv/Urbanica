@@ -22,6 +22,7 @@ import { Panels, PANEL_GROUPS, groupOf } from './panels/Panels';
 import { IssueCard, initials } from './panels/IssuesPanel';
 import { BRAND, BrandLockup } from './Brand';
 import { resetGame } from './reset';
+import { GOALS, planState, runGoal } from './plan';
 import { REQ_ICON, needsLine, reqTool, reqToolLabel, toolNeeds } from './needs';
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
@@ -492,6 +493,30 @@ function advice(): Advice | null {
   const blockers = Object.entries(city.stats?.upgradeBlockers ?? {})
     .filter(([k]) => !['occupancy', 'demand', 'land_value'].includes(k))
     .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0));
+  // пазарът на труда: безработни или липсващи работници – най-честата причина градът да не печели
+  const S = city.stats as { population?: number; unemploymentRate?: number; vacancies?: number; workforce?: number } | undefined;
+  if ((S?.population ?? 0) > 300 && (S?.unemploymentRate ?? 0) > 0.15)
+    return {
+      icon: '💼',
+      text: `Безработица ${Math.round((S?.unemploymentRate ?? 0) * 100)}% – хората нямат работа и не плащат данъци. Зонирайте търговия, индустрия или офиси.`,
+      action: { label: 'Търговска зона', run: () => setState({ tool: { kind: 'zone', zone: 'C' } }) },
+    };
+  if ((S?.workforce ?? 0) > 0 && (S?.vacancies ?? 0) > (S?.workforce ?? 0) * 0.25)
+    return {
+      icon: '🏠',
+      text: `${S?.vacancies} свободни работни места, но няма кой да работи – зонирайте още жилища.`,
+      action: { label: 'Жилищна зона', run: () => setState({ tool: { kind: 'zone', zone: 'R' } }) },
+    };
+  // първите етапи от плана са по-важни от надграждането
+  const early = planState(city);
+  if (early.next >= 0 && early.next < 9) {
+    const g = GOALS[early.next];
+    return {
+      icon: g.icon,
+      text: `Етап ${early.next + 1}/${early.total} – ${g.title}: ${g.why}`,
+      action: g.button ? { label: g.button, run: () => runGoal(g) } : undefined,
+    };
+  }
   if (blockers.length) {
     const [k, n] = blockers[0];
     const req = k as UpgradeRequirement;
@@ -508,7 +533,17 @@ function advice(): Advice | null {
       text: `${open.length} нерешени сигнала от граждани.`,
       action: { label: 'Виж', run: () => setState({ panel: 'issues', panelOpen: true }) },
     };
-  return { icon: '✨', text: 'Градът работи добре. Разширете го с нова земя или основете компания.' };
+  // следващият етап от плана за развитие
+  const ps = planState(city);
+  if (ps.next >= 0) {
+    const g = GOALS[ps.next];
+    return {
+      icon: g.icon,
+      text: `Етап ${ps.next + 1}/${ps.total} – ${g.title}: ${g.why}`,
+      action: g.button ? { label: g.button, run: () => runGoal(g) } : undefined,
+    };
+  }
+  return { icon: '✨', text: 'Всички етапи са изпълнени – градът е голям и печеливш. Разширете го с нова земя или нов град.' };
 }
 
 function Advisor() {

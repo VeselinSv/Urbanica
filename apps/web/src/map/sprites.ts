@@ -69,7 +69,56 @@ function makeSprite(r: number, maxH: number, draw: (g: Ctx, P: P3, r: number) =>
   const P: P3 = (u, v, h) => [ax + (u - v) * (TW / 2) * r, ay + (u + v) * (TH / 2) * r - h * r];
   g.lineJoin = 'round';
   draw(g, P, r);
+  applyMaterial(canvas);
   return { canvas, ax, ay };
+}
+
+// ------------------------------------------------------------------ материал
+// Фина „зърнеста“ текстура (мазилка, бетон, кора, листа) върху вече нарисувания обем: смесва се с
+// режим overlay само там, където има пиксели – повърхностите спират да изглеждат като векторна рисунка.
+let NOISE: ReturnType<typeof newCanvas> | null = null;
+function noiseCanvas() {
+  if (NOISE) return NOISE;
+  const c = newCanvas();
+  c.width = 96;
+  c.height = 96;
+  const g = c.getContext('2d') as Ctx | null;
+  if (!g) return null;
+  const img = g.createImageData(96, 96);
+  for (let i = 0; i < 96 * 96; i++) {
+    // ситно зърно + по-едри петна (неравности на материала)
+    const fine = (h01(i, 91) - 0.5) * 70;
+    const blotch = (h01(Math.floor((i % 96) / 6), Math.floor(i / 96 / 6), 92) - 0.5) * 40;
+    const v = Math.max(0, Math.min(255, 128 + fine + blotch));
+    img.data[i * 4] = v;
+    img.data[i * 4 + 1] = v;
+    img.data[i * 4 + 2] = v;
+    img.data[i * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  NOISE = c;
+  return c;
+}
+function applyMaterial(canvas: ReturnType<typeof newCanvas>, strength = 0.2) {
+  const noise = noiseCanvas();
+  if (!noise) return;
+  const t = newCanvas();
+  t.width = canvas.width;
+  t.height = canvas.height;
+  const tg = t.getContext('2d') as Ctx | null;
+  const g = canvas.getContext('2d') as Ctx | null;
+  if (!tg || !g) return;
+  const pat = tg.createPattern(noise as CanvasImageSource, 'repeat');
+  if (!pat) return;
+  tg.fillStyle = pat;
+  tg.fillRect(0, 0, t.width, t.height);
+  tg.globalCompositeOperation = 'destination-in';
+  tg.drawImage(canvas as CanvasImageSource, 0, 0);
+  g.save();
+  g.globalCompositeOperation = 'overlay';
+  g.globalAlpha = strength;
+  g.drawImage(t as CanvasImageSource, 0, 0);
+  g.restore();
 }
 
 type Fill = string | CanvasGradient | CanvasPattern;
@@ -511,6 +560,94 @@ function carSprite(g: Ctx, P: P3, r: number, cu: number, cv: number, alongU: boo
   void r;
 }
 
+/** Обла скала с неправилна форма: огряна отгоре-вляво, в сянка отдясно, с мек контакт със земята. */
+function boulder(g: Ctx, x: number, y: number, w: number, h: number, seed: number, color: number) {
+  softShadow(g, x + w * 0.35, y + h * 0.05, w * 1.25, w * 0.42);
+  const pts: [number, number][] = [];
+  const N = 9;
+  for (let i = 0; i < N; i++) {
+    const a = Math.PI + (i / (N - 1)) * Math.PI; // горната половина (от ляво към дясно)
+    const k = 0.78 + h01(seed, i, 3) * 0.3;
+    pts.push([x + Math.cos(a) * w * k, y - Math.sin(-a) * 0 - Math.abs(Math.sin(a)) * h * k]);
+  }
+  pts.push([x + w * 0.95, y + w * 0.18], [x - w * 0.95, y + w * 0.18]);
+  const gr = g.createLinearGradient(x - w, y - h, x + w, y);
+  gr.addColorStop(0, rgb(color, 1.18));
+  gr.addColorStop(0.55, rgb(color, 0.95));
+  gr.addColorStop(1, rgb(color, 0.62));
+  poly(g, pts, gr);
+  // пукнатини и мъх
+  line(g, [x - w * 0.2, y - h * 0.75], [x + w * 0.1, y - h * 0.2], rgb(color, 0.55, 0.7), 0.6);
+  g.fillStyle = 'rgba(92,120,60,0.35)';
+  g.beginPath();
+  g.ellipse(x - w * 0.35, y - h * 0.1, w * 0.35, h * 0.12, 0, 0, Math.PI * 2);
+  g.fill();
+}
+
+/**
+ * Скалист връх: силует от неправилни ребра, огряна лява страна и засенчена дясна, тъмни улеи
+ * (кулоари) надолу по склона и снежна шапка с назъбен долен ръб на високите върхове.
+ */
+function crag(g: Ctx, x: number, y: number, w: number, h: number, seed: number, color: number, snow: boolean) {
+  softShadow(g, x + w * 0.25, y, w * 1.1, w * 0.36);
+  const N = 16;
+  const top: [number, number][] = [];
+  const px = (h01(seed, 9) - 0.5) * 0.5; // главният връх е встрани от средата
+  const ex = 1.05 + h01(seed, 10) * 0.7; // стръмност – различна за всеки връх
+  // второстепенен връх (рамо) от едната страна
+  const sx2 = h01(seed, 16) < 0.5 ? -0.55 : 0.55;
+  const sh2 = 0.35 + h01(seed, 17) * 0.3;
+  for (let i = 0; i <= N; i++) {
+    const t = i / N; // 0..1 отляво надясно
+    const d = Math.abs(t - 0.5 - px * 0.5) * 2;
+    const main = Math.pow(Math.max(0, 1 - d), ex);
+    const d2 = Math.abs(t * 2 - 1 - sx2) * 2.2;
+    const shoulder = sh2 * Math.max(0, 1 - d2);
+    const jag = 0.7 + h01(seed, i, 2) * 0.38;
+    const hh = h * Math.max(main, shoulder) * (i === 0 || i === N ? 0 : jag);
+    top.push([x - w + 2 * w * t, y - hh]);
+  }
+  const peakI = top.reduce((bi, p, i) => (p[1] < top[bi][1] ? i : bi), 0);
+  const [pkx, pky] = top[peakI];
+  // лява (огряна) и дясна (в сянка) страна, разделени от билото към основата
+  const left: [number, number][] = [...top.slice(0, peakI + 1), [pkx + w * 0.12, y + w * 0.12], [x - w, y]];
+  const right: [number, number][] = [...top.slice(peakI), [x + w, y], [pkx + w * 0.12, y + w * 0.12]];
+  const gl = g.createLinearGradient(0, pky, 0, y);
+  gl.addColorStop(0, rgb(color, 1.2));
+  gl.addColorStop(0.55, rgb(mixc(color, 0x6f7656, 0.25), 1.02));
+  gl.addColorStop(1, rgb(mixc(color, 0x4e6a3a, 0.7), 0.9));
+  poly(g, left, gl);
+  const gr = g.createLinearGradient(0, pky, 0, y);
+  gr.addColorStop(0, rgb(color, 0.74));
+  gr.addColorStop(0.55, rgb(mixc(color, 0x4f5640, 0.3), 0.66));
+  gr.addColorStop(1, rgb(mixc(color, 0x34472a, 0.7), 0.6));
+  poly(g, right, gr);
+  // улеи и ребра надолу по склона
+  for (let i = 0; i < 6; i++) {
+    const t = h01(seed, i, 11);
+    const sx = pkx + (t - 0.5) * w * 0.9;
+    const sy = pky + h * (0.15 + h01(seed, i, 12) * 0.25);
+    const ex = sx + (sx - pkx) * 0.6 + (h01(seed, i, 13) - 0.5) * w * 0.2;
+    const ey = y - h * 0.05;
+    line(g, [sx, sy], [ex, ey], sx > pkx ? 'rgba(20,24,28,0.28)' : 'rgba(255,255,255,0.16)', 0.9);
+  }
+  if (snow) {
+    // снежна шапка: горната част на силуета, с назъбен долен ръб
+    const lim = pky + h * 0.38;
+    const cap: [number, number][] = top.filter((p) => p[1] < lim);
+    if (cap.length >= 2) {
+      const pts: [number, number][] = [...cap];
+      for (let i = cap.length - 1; i >= 0; i--) {
+        const p = cap[i];
+        pts.push([p[0], Math.min(lim + (h01(seed, i, 14) - 0.3) * h * 0.14, p[1] + h * 0.16 + h01(seed, i, 15) * h * 0.1)]);
+      }
+      poly(g, pts, 'rgba(246,249,252,0.95)');
+      // сянка върху снега отдясно на билото
+      poly(g, [[pkx, pky], ...cap.filter((p) => p[0] >= pkx), [pkx + w * 0.05, lim]], 'rgba(150,170,200,0.45)');
+    }
+  }
+}
+
 /** Гофрирана ламарина / вертикални ребра по стените на хале или склад. */
 function corrugate(g: Ctx, P: P3, b: [number, number, number, number], z0: number, z1: number, r: number) {
   if (r < 0.45) return;
@@ -885,7 +1022,7 @@ export type BuildingKey = (
   | { k: 'facility'; f: string; v: number; face: Face }
   | { k: 'construction'; v: number }
   | { k: 'tree'; t: TreeKind; v: number; size: number }
-  | { k: 'rock'; v: number }
+  | { k: 'rock'; v: number; peak?: number; snow?: boolean }
   | { k: 'tunnel'; v: number; dir: number }
 ) & { sn?: Season };
 
@@ -910,11 +1047,31 @@ function drawSprite(key: BuildingKey, r: number): Sprite {
   switch (key.k) {
     case 'tree':
       return makeSprite(r, 40 * key.size, (g, P) => treeDraw(g, P, r, key.t, key.size, key.v));
-    case 'rock':
-      return makeSprite(r, 14, (g, P) => {
-        const c = pick([0x8d8a84, 0x9b968e, 0x7f7c77], h01(key.v));
-        box(g, P, -0.12, -0.1, 0.1, 0.12, 0, 5 + h01(key.v, 2) * 5, { wall: c, edge: false });
+    case 'rock': {
+      // връх (peak > 0) – скалист масив с ребра и снежна шапка; иначе – обли, неправилни камъни
+      const peak = key.peak ?? 0;
+      const hgt = peak ? (16 + peak * 38) * (0.8 + h01(key.v, 3) * 0.4) : 7 + h01(key.v, 2) * 6;
+      return makeSprite(r, hgt + 10, (g, P) => {
+        const [x, y] = P(0, 0, 0);
+        const c = pick([0x8d8a84, 0x9b968e, 0x7f7c77, 0x857f75], h01(key.v));
+        if (peak) crag(g, x, y + 4 * r, (34 + peak * 32) * (0.8 + h01(key.v, 4) * 0.45) * r, hgt * r, key.v, c, !!key.snow);
+        else {
+          for (let i = 0; i < 3; i++) {
+            const s = 0.55 + h01(key.v, i, 5) * 0.6;
+            if (i > 0 && h01(key.v, i, 6) < 0.4) continue;
+            boulder(
+              g,
+              x + (i === 0 ? 0 : (h01(key.v, i, 7) - 0.5) * 18 * r),
+              y + (i === 0 ? 0 : (h01(key.v, i, 8) * 5 - 1) * r),
+              8 * s * r,
+              hgt * s * r,
+              key.v + i,
+              c,
+            );
+          }
+        }
       });
+    }
     case 'tunnel':
       return makeSprite(r, 30, (g, P) => {
         const [x, y] = P(0, 0, 0);

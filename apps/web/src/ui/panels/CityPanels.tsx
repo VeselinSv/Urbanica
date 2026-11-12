@@ -19,6 +19,7 @@ import { getWorld } from '@gce/world-generation';
 import { patch, post } from '../../api';
 import { bumpData, refreshAll, refreshCity, setState, toast, useStore } from '../../store';
 import { KIND_LABELS, money, moneyExact, num, pct, toCents } from '../../format';
+import { DevPlan } from '../plan';
 import { AsyncButton, DemandBar, Field, Meter, Section, Stat, Table, useApi } from '../common';
 import { describeTile } from '../../map/MapView';
 import { REQ_ICON, reqTool, reqToolLabel } from '../needs';
@@ -64,10 +65,11 @@ export function CityPanel() {
       <h2>{city.name}</h2>
       {isNew && (
         <div className="callout">
-          <b>Първи стъпки:</b> 1) инструмент „Път“ – влачете по територията (златистата рамка); 2) „Зони“ – жилищни, търговски и индустриални до пътя; 3)
-          „Услуги“ – вятърна централа и помпена станция за ток и вода, после училище. Сградите ще се появят сами, ако има търсене.
+          <b>Как се играе:</b> строите улици, зонирате (жилища, търговия, индустрия) и давате ток и вода – сградите и хората идват сами. Градът печели от
+          данъците на работещите жители, затова следете безработицата. Планът по-долу води стъпка по стъпка.
         </div>
       )}
+      <DevPlan />
       <div className="grid2">
         <Stat label="Население" value={num(s.population ?? 0)} />
         <Stat label="Безработица" value={pct(s.unemploymentRate ?? 0)} tone={(s.unemploymentRate ?? 0) > 0.12 ? 'bad' : 'good'} />

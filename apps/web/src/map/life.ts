@@ -6,6 +6,7 @@
 import { Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import { ISSUE_TYPES, parseKey, tileKey, type TileState } from '@gce/shared';
 import { Traffic } from './traffic';
+import { decalTexture } from './decals';
 
 const TW = 64;
 const TH = 32;
@@ -58,7 +59,8 @@ function cloudTexture(): Texture {
 }
 
 export class CityLife {
-  readonly ground = new Graphics();
+  /** Следите на сигналите по терена (дупки, теч, боклук…) – текстури, рисувани като истински материали. */
+  readonly ground = new Container();
   readonly cars = new Container();
   readonly smoke = new Container();
   readonly clouds = new Container();
@@ -109,11 +111,17 @@ export class CityLife {
     this.blocked = new Set(issues.filter((i) => ISSUE_TYPES[i.kind]?.effects.blocksRoad && i.status !== 'RESOLVED').map((i) => tileKey(i.x, i.y)));
     this.traffic.setBlocked(this.blocked);
     this.traffic.setIssues(issues);
-    const g = this.ground;
-    g.clear();
+    for (const ch of this.ground.removeChildren()) ch.destroy();
     for (const i of issues) {
       const c = iso(i.x + 0.5, i.y + 0.5);
-      this.decal(g, i, c.x, c.y);
+      const tex = decalTexture(i.kind, i.severity, i.x * 7 + i.y * 13, false);
+      if (tex) {
+        const d = new Sprite(tex);
+        d.anchor.set(0.5);
+        d.scale.set(0.5);
+        d.position.set(c.x, c.y + 1);
+        this.ground.addChild(d);
+      }
       const m = new Container();
       const fixing = i.status === 'FIXING';
       const color = fixing ? 0xf59e0b : i.severity >= 3 ? 0xdc2626 : i.severity === 2 ? 0xf97316 : 0xfacc15;
@@ -130,46 +138,6 @@ export class CityLife {
       m.position.set(c.x, c.y - 10);
       this.markers.addChild(m);
       this.markerList.push({ c: m, issue: i, sx: c.x, sy: c.y - 10 });
-    }
-  }
-
-  private decal(g: Graphics, i: IssueMarker, x: number, y: number) {
-    const s = 0.7 + i.severity * 0.25;
-    switch (i.kind) {
-      case 'pothole':
-        g.ellipse(x, y + 2, 9 * s, 4.5 * s).fill(0x2a2725);
-        g.ellipse(x + 1, y + 2.6, 6 * s, 2.6 * s).fill(0x1a1817);
-        g.ellipse(x - 3, y, 3, 1.2).fill({ color: 0x6b6560, alpha: 0.8 });
-        break;
-      case 'water_leak':
-      case 'sewage':
-        g.ellipse(x, y + 2, 20 * s, 9 * s).fill({ color: i.kind === 'sewage' ? 0x6b6a3a : 0x4ba3d9, alpha: 0.65 });
-        g.ellipse(x + 3, y, 9 * s, 4 * s).fill({ color: 0xd8f0ff, alpha: 0.35 });
-        break;
-      case 'garbage':
-        for (let k = 0; k < 3 + i.severity * 2; k++) g.circle(x - 10 + ((k * 7) % 20), y - 2 + ((k * 5) % 7), 3.2).fill(k % 2 ? 0x2f4f2f : 0x3b3b3b);
-        break;
-      case 'accident':
-        g.poly([x - 12, y - 2, x - 5, y - 5, x + 1, y - 2, x - 5, y + 1]).fill(0xc0392b);
-        g.poly([x - 2, y + 3, x + 4, y - 1, x + 11, y + 2, x + 5, y + 6]).fill(0xecf0f1);
-        for (const dx of [-16, 15]) g.poly([x + dx - 2, y + 4, x + dx, y - 3, x + dx + 2, y + 4]).fill(0xf97316);
-        break;
-      case 'fallen_tree':
-        g.moveTo(x - 16, y - 4)
-          .lineTo(x + 14, y + 6)
-          .stroke({ width: 4, color: 0x5d4433 });
-        g.circle(x + 14, y + 4, 9).fill(0x3f6b34);
-        g.circle(x + 8, y + 7, 7).fill(0x4f7f3a);
-        break;
-      case 'streetlight':
-        g.ellipse(x, y + 2, 26, 13).fill({ color: 0x050a14, alpha: 0.35 });
-        break;
-      case 'graffiti':
-        g.ellipse(x, y + 2, 14, 6).fill({ color: 0xd946ef, alpha: 0.35 });
-        break;
-      case 'power_outage':
-        g.ellipse(x, y + 2, 22, 10).fill({ color: 0x0b1020, alpha: 0.4 });
-        break;
     }
   }
 

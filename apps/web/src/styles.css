@@ -1779,3 +1779,63 @@ button.avatar:hover {
     right: 8px;
   }
 }
+
+/* ---------- план за развитие ---------- */
+.plan {
+  margin: 10px 0 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: linear-gradient(160deg, #2dd4bf1f, #a3e6350f);
+  border: 1px solid #2dd4bf55;
+}
+.plan-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.plan-bar {
+  height: 6px;
+  border-radius: 99px;
+  background: #ffffff14;
+  margin: 6px 0 8px;
+  overflow: hidden;
+}
+.plan-bar.thin {
+  height: 4px;
+  margin: 2px 0 4px;
+}
+.plan-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #2dd4bf, #a3e635);
+}
+.plan-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+.plan-cur p {
+  margin: 4px 0 6px;
+  line-height: 1.4;
+}
+.plan-prog {
+  margin-bottom: 6px;
+}
+.plan-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+.plan-list li {
+  margin: 3px 0;
+  color: var(--muted);
+}
+.plan-list li.done {
+  color: #86efac;
+}
+.plan-list li.cur {
+  color: #fde68a;
+  font-weight: 700;
+}
+.plan-list li .link {
+  margin-left: 6px;
+}

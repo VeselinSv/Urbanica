@@ -994,19 +994,19 @@ export const CITIZEN_LAST = ['Петров', 'Иванов', 'Георгиев',
 
 /** Реални цени на обществените сгради: [строителство, поддръжка на ден] (персоналът се плаща отделно). */
 const REAL_SERVICE_PRICES: Record<ServiceType, [number, number]> = {
-  power_coal: [eur(30_000_000), eur(8_000)],
-  power_wind: [eur(3_500_000), eur(300)],
-  water_pump: [eur(1_500_000), eur(250)],
-  sewage_plant: [eur(8_000_000), eur(1_200)],
-  landfill: [eur(3_000_000), eur(500)],
-  school: [eur(4_000_000), eur(350)],
-  university: [eur(35_000_000), eur(2_500)],
-  clinic: [eur(10_000_000), eur(900)],
-  fire_station: [eur(2_500_000), eur(250)],
-  police_station: [eur(2_000_000), eur(200)],
-  bus_depot: [eur(6_000_000), eur(700)],
-  park: [eur(600_000), eur(60)],
-  parking: [eur(400_000), eur(30)],
+  power_coal: [eur(18_000_000), eur(5_000)],
+  power_wind: [eur(2_000_000), eur(200)],
+  water_pump: [eur(900_000), eur(150)],
+  sewage_plant: [eur(4_000_000), eur(700)],
+  landfill: [eur(1_500_000), eur(300)],
+  school: [eur(2_500_000), eur(250)],
+  university: [eur(20_000_000), eur(1_500)],
+  clinic: [eur(4_000_000), eur(500)],
+  fire_station: [eur(1_500_000), eur(150)],
+  police_station: [eur(1_200_000), eur(120)],
+  bus_depot: [eur(3_000_000), eur(400)],
+  park: [eur(300_000), eur(40)],
+  parking: [eur(200_000), eur(20)],
 };
 /** Зониране (план, разрешителни, техническа инфраструктура) за плочка. */
 const REAL_ZONING: Record<ZoneType, number> = { R: eur(3_000), C: eur(3_000), I: eur(3_000), O: eur(3_000), A: eur(1_000), L: eur(3_000), H: eur(5_000) };

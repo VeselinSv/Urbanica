@@ -158,6 +158,10 @@ describe('Градска симулация', () => {
     const ox = Math.min(...keys.map((p) => p[0]));
     const oy = Math.min(...keys.map((p) => p[1])) - 5;
     for (let i = 0; i < 20; i++) city.tiles[tileKey(ox + i, oy + 13)] = { t: 'zone', z: 'I', lvl: 0, occ: 0, prog: 0, hp: 1 };
+    // персоналът на услугите расте с града – работните места идват основно от зоните (още търговия и индустрия)
+    for (let i = 0; i < 24; i++) city.tiles[tileKey(ox + i, oy + 14)] = { t: 'road' };
+    for (let j = 12; j < 14; j++) city.tiles[tileKey(ox + 23, oy + j)] = { t: 'road' };
+    for (let i = 0; i < 20; i++) city.tiles[tileKey(ox + i, oy + 15)] = { t: 'zone', z: i % 2 ? 'C' : 'I', lvl: 0, occ: 0, prog: 0, hp: 1 };
     city.tiles[tileKey(ox + 3, oy + 8)] = { t: 'service', s: 'school', cond: 1 };
     const base = run(city, 300);
     expect(base.last.stats.buildings.R).toBeGreaterThan(5);

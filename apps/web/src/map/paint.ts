@@ -149,10 +149,9 @@ export function terrainSampler(gen: WorldGenerator) {
     return (a * (1 - tx) + b * tx) * (1 - ty) + (cc * (1 - tx) + d * tx) * ty;
   };
   // Маска на водата, размита два пъти (3x3) – бреговата линия става плавна крива, а не стъпала.
-  // Реките влизат в маската плочка по плочка: всичко, което изглежда като вода, е вода и за строителството
-  // (сървърът не позволява сгради върху речни плочки), а сушата до реката изглежда като суша.
+  // Реките се рисуват отделно – като гладки линии по коритото (paintRivers).
   let blur = new Float32Array(N * N);
-  for (let k = 0; k < N * N; k++) blur[k] = c.water[k] === WATER_OCEAN || c.water[k] === WATER_LAKE || c.water[k] === WATER_RIVER ? 1 : 0;
+  for (let k = 0; k < N * N; k++) blur[k] = c.water[k] === WATER_OCEAN || c.water[k] === WATER_LAKE ? 1 : 0;
   for (let pass = 0; pass < 2; pass++) {
     const nb = new Float32Array(N * N);
     for (let y = 0; y < N; y++)
@@ -179,21 +178,28 @@ export function terrainSampler(gen: WorldGenerator) {
     return (wet(x0, y0) * (1 - tx) + wet(x0 + 1, y0) * tx) * (1 - ty) + (wet(x0, y0 + 1) * (1 - tx) + wet(x0 + 1, y0 + 1) * tx) * ty;
   };
   /** Връща [r,g,b]. */
-  return (wx: number, wy: number, out: number[]) => {
+  return (wx: number, wy: number, out: number[], season?: Season) => {
     const h = bil(H, wx, wy);
     const n = h01(Math.floor(wx * 8), Math.floor(wy * 8), 3) - 0.5;
     const w = wetB(wx, wy) + n * 0.06;
     let col: number;
     if (w > 0.5) {
       const tileW = at(c.water, Math.floor(wx), Math.floor(wy));
-      if (tileW === WATER_LAKE || (tileW !== WATER_OCEAN && h > SEA)) {
+      if (tileW === WATER_RIVER || (tileW !== WATER_OCEAN && tileW !== WATER_LAKE && h > SEA)) {
+        // река: плитко и по-светло до бреговете, тъмно и дълбоко в средата, с леки вълнички по течението
+        const depth = clamp01((w - 0.5) * 2.2);
+        const ripple = (smoothNoise(wx * 3, wy * 3, 1, 71) - 0.5) * 0.09;
+        col = mixc(mixc(C.shallow, C.river, clamp01(depth * 1.6)), C.riverDeep, clamp01((depth - 0.45) * 1.8));
+        col = mixc(col, ripple > 0 ? 0xd8eef5 : 0x23506a, Math.abs(ripple));
+      } else if (tileW === WATER_LAKE || (tileW !== WATER_OCEAN && h > SEA)) {
         col = mixc(C.shallow, C.lake, clamp01((w - 0.5) * 2.5));
       } else {
         const depth = clamp01((SEA - h) / 0.09);
         col = mixc(C.shallow, C.deep, depth);
       }
-      // плитка ивица и пяна до брега
-      if (w < 0.6) col = mixc(col, 0xd9ecef, (0.6 - w) * 4);
+      // плитка ивица и пяна до брега (по реките – само лек светъл ръб)
+      const river = tileW === WATER_RIVER;
+      if (w < 0.6) col = mixc(col, 0xd9ecef, (0.6 - w) * (river ? 1.6 : 4));
       out[0] = (col >> 16) & 255;
       out[1] = (col >> 8) & 255;
       out[2] = col & 255;
@@ -207,6 +213,11 @@ export function terrainSampler(gen: WorldGenerator) {
     col = patch > 0 ? mixc(col, 0x9fbf5a, patch * 0.35) : mixc(col, 0x557f3a, -patch * 0.3);
     // пясък по крайбрежието
     if (w > 0.28 && h < SEA + 0.035) col = mixc(col, C.sand, clamp01((w - 0.28) * 4.5));
+    // бреговете на реките и езерата: влажна по-тъмна трева, после чакъл и кал до самата вода
+    else if (w > 0.2) {
+      col = mixc(col, 0x4f7a3a, clamp01((w - 0.2) * 3) * 0.35);
+      if (w > 0.38) col = mixc(col, C.bank, clamp01((w - 0.38) * 8) * 0.85);
+    }
     if (f > 0.35) col = mixc(col, C.forestFloor, clamp01((f - 0.35) * 2.2));
     if (h > HILLS - 0.04) col = mixc(col, C.hills, clamp01((h - HILLS + 0.04) / 0.1) * 0.7);
     // алпийски ливади над горския пояс
@@ -218,6 +229,12 @@ export function terrainSampler(gen: WorldGenerator) {
     const slope = Math.sqrt(gx * gx + gy * gy);
     if (h > HILLS - 0.05) col = mixc(col, mixc(C.rock, 0x6f6a62, 0.4), clamp01((slope - 0.025) * 18) * 0.75);
     if (h > 0.83) col = mixc(col, C.snow, clamp01((h - 0.83) / 0.05));
+    // сезон: сняг (по-дебел нагоре, по-тънък до водата), есенни тонове, свежа пролет – плавно, без шевове по плочките
+    if (season === 'winter') {
+      const a = clamp01(0.55 + Math.max(0, h - 0.35) * 0.9 + (smoothNoise(wx, wy, 9, 63) - 0.5) * 0.18 - Math.max(0, w - 0.3) * 2.2);
+      col = mixc(col, 0xf3f6fa, a);
+    } else if (season === 'autumn') col = mixc(col, 0xb0803a, 0.12 + smoothNoise(wx, wy, 7, 62) * 0.1);
+    else if (season === 'spring') col = mixc(col, 0x78be46, 0.08);
     // извън България – избледнял фон (там не се строи)
     if (at(c.region, Math.floor(wx), Math.floor(wy)) === 255) col = mixc(col, 0x8a9096, 0.55);
     // хълмово осветяване (светлина отгоре-вляво на екрана = посока -x)
@@ -239,7 +256,7 @@ function sampler(gen: WorldGenerator) {
   return s;
 }
 
-function paintTerrain(g: Ctx, gen: WorldGenerator, x0: number, y0: number, size: number, S: number) {
+function paintTerrain(g: Ctx, gen: WorldGenerator, x0: number, y0: number, size: number, S: number, season?: Season) {
   const M = 1;
   const n = (size + 2 * M) * S;
   const img = newCanvas();
@@ -251,7 +268,7 @@ function paintTerrain(g: Ctx, gen: WorldGenerator, x0: number, y0: number, size:
   const out = [0, 0, 0];
   for (let j = 0; j < n; j++)
     for (let i = 0; i < n; i++) {
-      sample(x0 - M + (i + 0.5) / S, y0 - M + (j + 0.5) / S, out);
+      sample(x0 - M + (i + 0.5) / S, y0 - M + (j + 0.5) / S, out, season);
       const o = (j * n + i) * 4;
       data.data[o] = out[0];
       data.data[o + 1] = out[1];
@@ -268,45 +285,59 @@ function paintRivers(g: Ctx, gen: WorldGenerator, x0: number, y0: number, x1: nu
   g.lineCap = 'round';
   g.lineJoin = 'round';
   const rivers = gen.rivers.filter((r) => bboxHit(r.points, x0 - 4, y0 - 4, x1 + 4, y1 + 4));
-  for (const pass of [0, 1, 2, 3, 4, 5]) {
+  // Плочка е „река“ за строителството, ако центърът ѝ е до w/2 + 0.05 от средата на коритото. Водата се
+  // рисува до w/2 + 0.3 – така всяка речна плочка ясно изглежда като вода, а сушата до нея – като суша.
+  // Цветът преминава плавно: влажен бряг → кал и чакъл → плитко → дълбоко (много тънки слоеве, без ивици).
+  const layers: { extra: number; k: number; color: string }[] = [
+    { extra: 1.25, k: 1, color: 'rgba(60,92,48,0.16)' }, // влажна трева
+    { extra: 0.82, k: 1, color: rgb(C.bank, 0.92) }, // кал и чакъл
+    { extra: 0.62, k: 1, color: rgb(mixc(C.bank, C.shallow, 0.55)) },
+  ];
+  const STEPS = 7;
+  for (let i = 0; i < STEPS; i++) {
+    const t = i / (STEPS - 1);
+    // от w + 0.6 (светла плитка вода) до w * 0.3 (тъмната среда)
+    layers.push({
+      extra: 0.6 * (1 - t),
+      k: 1 - 0.7 * t,
+      color: rgb(mixc(mixc(C.shallow, C.river, Math.min(1, t * 1.6)), C.riverDeep, Math.max(0, t - 0.4) / 0.6)),
+    });
+  }
+  for (const L of layers) {
     for (const r of rivers) {
       const p = r.points;
       for (let i = 0; i < p.length - 1; i++) {
         const a = p[i];
         const b = p[i + 1];
         if ((a.x < x0 - 4 && b.x < x0 - 4) || (a.x > x1 + 4 && b.x > x1 + 4) || (a.y < y0 - 4 && b.y < y0 - 4) || (a.y > y1 + 4 && b.y > y1 + 4)) continue;
-        const w = (a.w + b.w) / 2;
         const wa = gen.country.water[Math.floor(a.y) * gen.size + Math.floor(a.x)];
         const wb = gen.country.water[Math.floor(b.y) * gen.size + Math.floor(b.x)];
         if ((wa === WATER_OCEAN || wa === WATER_LAKE) && (wb === WATER_OCEAN || wb === WATER_LAKE)) continue;
+        const w = (a.w + b.w) / 2;
         g.beginPath();
         g.moveTo(a.x, a.y);
         g.lineTo(b.x, b.y);
-        if (pass <= 1) {
-          // коритото и бреговете вече са нарисувани от маската на водата (плочките-река)
-          continue;
-        } else if (pass === 2) {
-          // плитка вода до бреговете
-          g.lineWidth = w;
-          g.strokeStyle = rgb(mixc(C.river, 0x7fb9c9, 0.35));
-        } else if (pass === 3) {
-          g.lineWidth = w * 0.7;
-          g.strokeStyle = rgb(C.river);
-        } else if (pass === 4) {
-          g.lineWidth = w * 0.38;
-          g.strokeStyle = rgb(C.riverDeep, 1, 0.85);
-        } else {
-          // течение – светли прекъснати линии
-          if (w < 0.7) continue;
-          g.lineWidth = 0.04;
-          g.strokeStyle = 'rgba(225,242,250,0.4)';
-          g.setLineDash([0.35, 0.8]);
-        }
+        g.lineWidth = w * L.k + L.extra;
+        g.strokeStyle = L.color;
         g.stroke();
-        g.setLineDash([]);
       }
     }
   }
+  // течение – едва забележими светли прекъснати линии по широките реки
+  g.setLineDash([0.35, 0.8]);
+  g.lineWidth = 0.03;
+  g.strokeStyle = 'rgba(225,242,250,0.18)';
+  for (const r of rivers) {
+    const p = r.points;
+    for (let i = 0; i < p.length - 1; i++) {
+      if ((p[i].w + p[i + 1].w) / 2 < 0.9) continue;
+      g.beginPath();
+      g.moveTo(p[i].x, p[i].y);
+      g.lineTo(p[i + 1].x, p[i + 1].y);
+      g.stroke();
+    }
+  }
+  g.setLineDash([]);
 }
 
 // ------------------------------------------------------------------ градски пътища (плочки)
@@ -628,21 +659,34 @@ function paintSeasonGround(g: Ctx, gen: WorldGenerator, lookup: TileLookup, x0: 
   if (!season || season === 'summer') return;
   const N = gen.size;
   const c = gen.country;
+  // Плочките се събират в няколко пътя (по нива на плътност) и всеки се запълва наведнъж – така няма
+  // застъпвания и шевове между плочките (иначе по снега се вижда мрежа от светли линии).
+  const LEVELS = 5;
+  const paths: Path2D[] = Array.from({ length: LEVELS }, () => new Path2D());
+  const used = new Array<boolean>(LEVELS).fill(false);
   for (let y = y0 - 1; y < y0 + CHUNK + 1; y++)
     for (let x = x0 - 1; x < x0 + CHUNK + 1; x++) {
       if (x < 0 || y < 0 || x >= N || y >= N) continue;
       const k = y * N + x;
       if (c.water[k]) continue;
-      const t = lookup(x, y);
-      if (t?.t === 'road') continue;
+      // теренът вече е със сезона; тук – само градските площи (тревни площи, паркинги), рисувани отгоре
+      const lt = lookup(x, y);
+      if (!lt || lt.t === 'road') continue;
       const h = c.height[k];
-      if (season === 'winter') {
-        const a = Math.min(0.85, 0.55 + Math.max(0, h - 0.35) * 0.9 + (h01(x, y, 61) - 0.5) * 0.12);
-        g.fillStyle = `rgba(243,246,250,${a.toFixed(3)})`;
-      } else if (season === 'autumn') g.fillStyle = `rgba(176,128,58,${(0.14 + h01(x, y, 62) * 0.08).toFixed(3)})`;
-      else g.fillStyle = 'rgba(120,190,70,0.08)';
-      g.fillRect(x - 0.02, y - 0.02, 1.04, 1.04);
+      // плавна промяна (по височина и бавен шум), не случайна за всяка плочка
+      const v = season === 'winter' ? Math.max(0, h - 0.35) * 1.6 + (smoothNoise(x, y, 9, 63) - 0.5) * 0.25 : smoothNoise(x, y, 7, 62);
+      const lvl = Math.max(0, Math.min(LEVELS - 1, Math.floor(v * LEVELS)));
+      paths[lvl].rect(x, y, 1, 1);
+      used[lvl] = true;
     }
+  for (let l = 0; l < LEVELS; l++) {
+    if (!used[l]) continue;
+    const t = l / (LEVELS - 1);
+    if (season === 'winter') g.fillStyle = `rgba(243,246,250,${(0.55 + t * 0.3).toFixed(3)})`;
+    else if (season === 'autumn') g.fillStyle = `rgba(176,128,58,${(0.13 + t * 0.09).toFixed(3)})`;
+    else g.fillStyle = 'rgba(120,190,70,0.08)';
+    g.fill(paths[l]);
+  }
 }
 
 /** Мост ли е пътната плочка (над река или езеро). */
@@ -682,7 +726,7 @@ function paintBridgeShadows(g: Ctx, gen: WorldGenerator, roads: RoadTile[]) {
 }
 
 /** Парапети и колони на мостовете; тунелите – планината отново покрива пътя. */
-function paintBridgesTunnels(g: Ctx, gen: WorldGenerator, roads: RoadTile[], lookup: TileLookup, detail: number) {
+function paintBridgesTunnels(g: Ctx, gen: WorldGenerator, roads: RoadTile[], lookup: TileLookup, detail: number, season?: Season) {
   for (const r of roads) {
     if (isBridge(gen, r.x, r.y)) {
       const st = roadStyle(r.t);
@@ -726,7 +770,7 @@ function paintBridgesTunnels(g: Ctx, gen: WorldGenerator, roads: RoadTile[], loo
       g.beginPath();
       g.rect(r.x - 0.02, r.y - 0.02, 1.04, 1.04);
       g.clip();
-      paintTerrain(g, gen, r.x, r.y, 1, detail >= 2 ? 4 : 2);
+      paintTerrain(g, gen, r.x, r.y, 1, detail >= 2 ? 4 : 2, season);
       g.restore();
     }
   }
@@ -916,7 +960,8 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
       const h = c.height[k];
       let count = 0;
       const clearing = smoothNoise(x, y, 6, 57);
-      if (opts.cleared?.(x, y)) count = h01(x, y, 27) < 0.08 ? 1 : 0;
+      // територията на града е разчистена – там не никнат дървета (нито след събаряне)
+      if (opts.cleared?.(x, y)) count = 0;
       else if (f > 0.5) count = clearing < 0.24 ? (h01(x, y, 28) < 0.25 ? 1 : 0) : clearing < 0.32 ? (mid ? 1 : 2) : mid ? 2 : 4;
       else if (f > 0.3) count = h01(x, y, 23) < f * 1.6 ? (h01(x, y, 26) < 0.5 ? 2 : 1) : 0;
       else if (h > MOUNTAINS) count = 0;
@@ -950,8 +995,24 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
           },
         });
       }
-      if (h > MOUNTAINS - 0.02 && h01(x, y, 40) < 0.25)
-        out.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'rock', v: Math.floor(h01(x, y, 41) * 5) } });
+      // планини: скалисти върхове по билата (локалните максимуми), камъни по склоновете
+      if (h > MOUNTAINS + 0.01 && !opts.cleared?.(x, y)) {
+        // връх – най-високата точка в околността 5x5; иначе понякога – скален зъбер по склона
+        let top = true;
+        for (let dy = -2; dy <= 2 && top; dy++) for (let dx = -2; dx <= 2; dx++) if ((dx || dy) && c.height[(y + dy) * N + (x + dx)] >= h) top = false;
+        if (top || h01(x, y, 42) < 0.07) {
+          const peak = Math.max(0.25, Math.min(1, (h - MOUNTAINS) / 0.16)) * (top ? 1 : 0.45);
+          out.push({
+            d: x + y + 1.2,
+            wx: x + 0.5,
+            wy: y + 0.5,
+            key: { k: 'rock', v: Math.floor(h01(x, y, 41) * 8), peak: Math.round(peak * 4) / 4, snow: h > 0.8 },
+          });
+          continue;
+        }
+      }
+      if (h > MOUNTAINS - 0.03 && h01(x, y, 40) < 0.3)
+        out.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'rock', v: Math.floor(h01(x, y, 41) * 8) } });
     }
   out.sort((a, b) => a.d - b.d || a.wx - b.wx);
   if (opts.season && opts.season !== 'summer') {
@@ -992,7 +1053,7 @@ export function paintChunk(gen: WorldGenerator, lookup: TileLookup, cx: number, 
   g.beginPath();
   g.rect(x0, y0, CHUNK, CHUNK);
   g.clip();
-  paintTerrain(g, gen, x0, y0, CHUNK, opts.detail >= 2 ? 4 : 2);
+  paintTerrain(g, gen, x0, y0, CHUNK, opts.detail >= 2 ? 4 : 2, opts.season);
   // фина текстура (само отблизо)
   if (opts.detail >= 2) {
     g.save();
@@ -1027,7 +1088,7 @@ export function paintChunk(gen: WorldGenerator, lookup: TileLookup, cx: number, 
   paintBridgeShadows(g, gen, roads);
   paintTileRoads(g, roads, opts.detail);
   paintRoundabouts(g, roads, opts.detail);
-  paintBridgesTunnels(g, gen, roads, lookup, opts.detail);
+  paintBridgesTunnels(g, gen, roads, lookup, opts.detail, opts.season);
   g.restore();
 
   // ---- обемни обекти, сортирани по дълбочина ----

@@ -107,6 +107,45 @@ function drawCar(g: Ctx, model: CarModel, color: number, yaw: number) {
     if (m === 'light') return rgb(0xe8e6df, shade);
     return rgb(0x9b1c17, shade);
   };
+  /**
+   * Материалът на лицето като градиент: лакът е по-светъл горе (отразява небето) и по-тъмен долу,
+   * покривът има отблясък по диагонал, а стъклата – светла ивица от отразеното небе.
+   */
+  const faceFill = (m: Mat, shade: number, n: V2, front: number, pts: V2[], top = false): string | CanvasGradient => {
+    const ys = pts.map((p) => p[1]);
+    const xs = pts.map((p) => p[0]);
+    const y0 = Math.min(...ys);
+    const y1 = Math.max(...ys);
+    const x0 = Math.min(...xs);
+    const x1 = Math.max(...xs);
+    if (typeof m === 'number') {
+      if (top) {
+        const gr = g.createLinearGradient(x0, y0, x1, y1);
+        gr.addColorStop(0, rgb(m, shade * 1.02));
+        gr.addColorStop(0.42, rgb(mixc(m, 0xffffff, 0.28), shade));
+        gr.addColorStop(0.58, rgb(m, shade * 1.0));
+        gr.addColorStop(1, rgb(m, shade * 0.86));
+        return gr;
+      }
+      if (y1 - y0 < 0.5) return rgb(m, shade);
+      const gr = g.createLinearGradient(0, y0, 0, y1);
+      gr.addColorStop(0, rgb(mixc(m, 0xffffff, 0.16), shade * 1.04));
+      gr.addColorStop(0.45, rgb(m, shade));
+      gr.addColorStop(1, rgb(m, shade * 0.7));
+      return gr;
+    }
+    if ((m === 'glass' || m === 'glassFront') && x1 - x0 > 1) {
+      const base = matFill(m, shade, n, front) as string;
+      const gr = g.createLinearGradient(x0, y0, x1, y1);
+      gr.addColorStop(0, base);
+      gr.addColorStop(0.35, base);
+      gr.addColorStop(0.45, 'rgba(225,238,248,0.95)');
+      gr.addColorStop(0.55, base);
+      gr.addColorStop(1, base);
+      return gr;
+    }
+    return matFill(m, shade, n, front);
+  };
   const prism = (p: Prism) => {
     const [a0, a1, b0, b1] = p.base;
     const [ta0, ta1, tb0, tb1] = p.top;
@@ -145,15 +184,11 @@ function drawCar(g: Ctx, model: CarModel, color: number, yaw: number) {
       if (nx + ny <= 0.001) continue;
       const front = na; // +1 – предно лице, -1 – задно
       const m = typeof p.side === 'function' ? p.side(front) : p.side;
-      poly(
-        [P(B[i][0], B[i][1], p.h0), P(B[j][0], B[j][1], p.h0), P(T[j][0], T[j][1], p.h1), P(T[i][0], T[i][1], p.h1)],
-        matFill(m, shadeFor(nx, ny), [nx, ny], front),
-      );
+      const quad = [P(B[i][0], B[i][1], p.h0), P(B[j][0], B[j][1], p.h0), P(T[j][0], T[j][1], p.h1), P(T[i][0], T[i][1], p.h1)];
+      poly(quad, faceFill(m, shadeFor(nx, ny), [nx, ny], front, quad));
     }
-    poly(
-      T.map(([a, b]) => P(a, b, p.h1)),
-      matFill(p.topMat, 1.06, [0, 0], 0),
-    );
+    const topPts = T.map(([a, b]) => P(a, b, p.h1));
+    poly(topPts, faceFill(p.topMat, 1.06, [0, 0], 0, topPts, true));
   };
 
   // сянка (светлината е отгоре-вляво → сянката пада надясно-надолу)
