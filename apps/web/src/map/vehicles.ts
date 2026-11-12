@@ -5,11 +5,12 @@
  * от 16 кадъра в една текстура. Пешеходците имат 4 фази на ходене и 2 посоки (към/от зрителя).
  */
 import { Rectangle, Texture } from 'pixi.js';
+import { SMOOTH_MODELS, drawSmoothCar, type SmoothModel } from './carmodel';
 
 export type CarModel = 'sedan' | 'hatch' | 'suv' | 'van' | 'taxi' | 'police' | 'bus' | 'truck' | 'crew' | 'ambulance' | 'garbage' | 'plow';
 export const HEADINGS = 16;
 
-const RES = 2;
+const RES = 3;
 const FW = 50;
 const FH = 44;
 const OX = 25;
@@ -205,9 +206,14 @@ function drawCar(g: Ctx, model: CarModel, color: number, yaw: number) {
       g.beginPath();
       g.ellipse(x, y, 1.7, 1.25, 0, 0, Math.PI * 2);
       g.fill();
-      g.fillStyle = '#8a8f96';
+      // сребриста джанта с тъмна главина
+      g.fillStyle = '#b8bec6';
       g.beginPath();
-      g.ellipse(x, y, 0.7, 0.5, 0, 0, Math.PI * 2);
+      g.ellipse(x, y, 0.95, 0.7, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#4a4f56';
+      g.beginPath();
+      g.ellipse(x, y, 0.32, 0.24, 0, 0, Math.PI * 2);
       g.fill();
     }
 
@@ -376,6 +382,46 @@ function drawCar(g: Ctx, model: CarModel, color: number, yaw: number) {
       poly([P(a, b0, 2.6), P(a, b1, 2.6), P(a, b1, 3.8), P(a, b0, 3.8)], '#c0261c');
     }
   }
+  // детайли на леките коли: странични огледала, линия на вратите, регистрационни номера
+  if (model !== 'bus' && model !== 'truck' && model !== 'garbage' && model !== 'plow') {
+    const sideVis = (b: number) => {
+      // нормалата на страната (0, ±1) в света
+      const nx = -sa * Math.sign(b);
+      const ny = ca * Math.sign(b);
+      return nx + ny > 0.05;
+    };
+    for (const b of [-hw, hw]) {
+      if (!sideVis(b)) continue;
+      // огледало при предните колони
+      const sb = Math.sign(b);
+      poly([P(0.05, b, 4.3), P(0.068, b, 4.3), P(0.068, b + sb * 0.018, 4.6), P(0.05, b + sb * 0.018, 4.6)], rgb(body, 0.8));
+      // линия на вратите и дръжки
+      g.strokeStyle = 'rgba(0,0,0,0.35)';
+      g.lineWidth = 0.25;
+      for (const a of [-0.005, -0.075]) {
+        const p0 = P(a, b, 1.9);
+        const p1 = P(a, b, 4.2);
+        g.beginPath();
+        g.moveTo(p0[0], p0[1]);
+        g.lineTo(p1[0], p1[1]);
+        g.stroke();
+      }
+      for (const a of [-0.02, -0.09]) {
+        const p = P(a, b, 3.5);
+        g.fillStyle = 'rgba(30,30,30,0.6)';
+        g.fillRect(p[0] - 0.4, p[1] - 0.15, 0.8, 0.3);
+      }
+    }
+    // номера отпред и отзад (бели правоъгълничета с тъмен ръб)
+    const plate = (a: number) => {
+      poly([P(a, -0.022, 1.9), P(a, 0.022, 1.9), P(a, 0.022, 2.7), P(a, -0.022, 2.7)], '#f4f4f0');
+      const c = P(a, 0, 2.3);
+      g.fillStyle = '#1f3a8f';
+      g.fillRect(c[0] - 0.9, c[1] - 0.25, 0.25, 0.5);
+    };
+    if (frontVis) plate(L / 2 + 0.002);
+    if (backVis) plate(-L / 2 - 0.002);
+  }
   // отблясък по горния ръб на покрива
   const top = parts[parts.length - 1];
   if (top) {
@@ -410,7 +456,10 @@ export function carFrames(model: CarModel, color: number): Texture[] {
   const g = c.getContext('2d')!;
   for (let i = 0; i < HEADINGS; i++) {
     g.setTransform(RES, 0, 0, RES, (i * FW + OX) * RES, OY * RES);
-    drawCar(g, model, color, (i / HEADINGS) * Math.PI * 2);
+    const yaw = (i / HEADINGS) * Math.PI * 2;
+    // леките коли – гладки модели; камионите, автобусите и служебните – обемни кутии
+    if (SMOOTH_MODELS.has(model)) drawSmoothCar(g, model as SmoothModel, color, yaw);
+    else drawCar(g, model, color, yaw);
   }
   const base = Texture.from(c);
   const frames: Texture[] = [];

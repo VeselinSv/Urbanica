@@ -252,6 +252,10 @@ interface WindowStyle {
   fromFloor?: number;
   /** Без междуетажни линии (къщи). */
   noSlabs?: boolean;
+  /** Цвят на дървените капаци от двете страни на прозореца (къщи). */
+  shutters?: number;
+  /** Сандъчета с цветя под прозорците на първия етаж. */
+  flowerBoxes?: boolean;
 }
 
 /** Балкон: изнесена плоча с парапет пред прозореца. */
@@ -322,6 +326,20 @@ function windows(g: Ctx, P: P3, r: number, b: [number, number, number, number], 
         const s1 = (c + (1 + w) / 2) / cols;
         const hv = h01(ws.seed, f, c, face === 'left' ? 1 : 2);
         const lit = hv < (ws.lit ?? 0.12);
+        // дървени капаци от двете страни
+        if (ws.shutters !== undefined) {
+          const sw = (s1 - s0) * 0.42;
+          faceQuad(g, P, face, b, s0 - 0.014 - sw, s0 - 0.016, za - 0.6, zb + 0.4, rgb(ws.shutters, shade));
+          faceQuad(g, P, face, b, s1 + 0.016, s1 + 0.014 + sw, za - 0.6, zb + 0.4, rgb(ws.shutters, shade));
+          for (const [a0, a1] of [
+            [s0 - 0.014 - sw, s0 - 0.016],
+            [s1 + 0.016, s1 + 0.014 + sw],
+          ])
+            for (let k = 1; k < 4; k++) {
+              const zz = za + ((zb - za) * k) / 4;
+              faceQuad(g, P, face, b, a0, a1, zz - 0.25, zz + 0.25, `rgba(0,0,0,${0.18 * shade})`);
+            }
+        }
         // рамка (леко изнесена) и перваз
         faceQuad(g, P, face, b, s0 - 0.014, s1 + 0.014, za - 1, zb + 0.8, rgb(ws.frame ?? 0xf5f2ea, shade));
         faceQuad(g, P, face, b, s0 - 0.03, s1 + 0.03, za - 1.6, za - 0.8, rgb(0xd9d4ca, shade * 0.95));
@@ -341,9 +359,53 @@ function windows(g: Ctx, P: P3, r: number, b: [number, number, number, number], 
         // средна рамка при широки прозорци
         if ((s1 - s0) * len > 0.07) faceQuad(g, P, face, b, (s0 + s1) / 2 - 0.004, (s0 + s1) / 2 + 0.004, za, zb, rgb(ws.frame ?? 0xf5f2ea, shade * 0.95));
         if (ws.balcony && f > 0 && h01(ws.seed, f, c, 7) < ws.balcony) balcony(g, P, face, b, s0 - 0.04, s1 + 0.04, za - 0.4, shade);
+        // сандъче с цветя под прозорците на приземния етаж
+        if (ws.flowerBoxes && f === 0 && SEASON !== 'winter') {
+          faceQuad(g, P, face, b, s0 - 0.01, s1 + 0.01, za - 2.6, za - 1.2, rgb(0x6b4a33, shade));
+          const flowers = [0xe8505b, 0xf2c94c, 0xf6f1e7, 0xb56be0, 0xf08a3c];
+          for (let k = 0; k < 4; k++) {
+            const ss = s0 + ((s1 - s0) * (k + 0.5)) / 4;
+            faceQuad(g, P, face, b, ss - 0.012, ss + 0.012, za - 1.3, za - 0.3, rgb(flowers[(ws.seed + k + c) % flowers.length], shade));
+          }
+        }
       }
     }
   }
+}
+
+/** Сайвант над входа: малък покрив на две бели колонки и стъпало. */
+function porch(g: Ctx, P: P3, b: [number, number, number, number], face: Face, s: number, wall: number, roofC: number) {
+  const [u0, v0, u1, v1] = b;
+  const d = 0.08;
+  const w = 0.11;
+  // при лице „left“ входът е на стената v = v1 и сайвантът излиза към +v; при „right“ – стената u = u1, към +u
+  const at = (along: number, out: number, z: number) => (face === 'left' ? P(u0 + (u1 - u0) * along, v1 + out, z) : P(u1 + out, v0 + (v1 - v0) * along, z));
+  const a0 = s - w;
+  const a1 = s + w;
+  // стъпало
+  poly(g, [at(a0, 0, 1.2), at(a1, 0, 1.2), at(a1, d, 1.2), at(a0, d, 1.2)], rgb(0xd8d2c6, 1.05));
+  poly(g, [at(a0, d, 0), at(a1, d, 0), at(a1, d, 1.2), at(a0, d, 1.2)], rgb(0xb9b2a6, 0.9));
+  // колонки
+  for (const a of [a0 + 0.015, a1 - 0.015]) line(g, at(a, d - 0.01, 1.2), at(a, d - 0.01, 10), rgb(0xf4f1ea, 0.95), 1.4);
+  // покривче
+  poly(g, [at(a0 - 0.02, 0, 11.5), at(a1 + 0.02, 0, 11.5), at(a1 + 0.02, d + 0.02, 9.6), at(a0 - 0.02, d + 0.02, 9.6)], rgb(roofC, 1.05));
+  poly(
+    g,
+    [at(a0 - 0.02, d + 0.02, 9.6), at(a1 + 0.02, d + 0.02, 9.6), at(a1 + 0.02, d + 0.02, 8.8), at(a0 - 0.02, d + 0.02, 8.8)],
+    rgb(mixc(wall, 0xffffff, 0.3), 0.9),
+  );
+}
+
+/** Капандура: малко прозорче с покривче, изнесено от ската към лицето на къщата. */
+function dormer(g: Ctx, P: P3, b: [number, number, number, number], hh: number, wall: number, roofC: number, face: Face) {
+  const [u0, v0, u1, v1] = b;
+  const cu = (u0 + u1) / 2;
+  const cv = (v0 + v1) / 2;
+  const bx: [number, number, number, number] = face === 'left' ? [cu - 0.07, cv + 0.02, cu + 0.07, cv + 0.12] : [cu + 0.02, cv - 0.07, cu + 0.12, cv + 0.07];
+  box(g, P, bx[0], bx[1], bx[2], bx[3], hh + 2, hh + 9, { wall, edge: true });
+  faceQuad(g, P, face, bx, 0.25, 0.75, hh + 3.5, hh + 7.6, rgb(0x6f8aa0, face === 'left' ? 1.05 : 0.8));
+  faceQuad(g, P, face, bx, 0.48, 0.52, hh + 3.5, hh + 7.6, rgb(0xf5f2ea, 0.9));
+  roof(g, P, bx, hh + 9, 'gable', roofC, wall, 4, 3);
 }
 
 function door(g: Ctx, P: P3, b: [number, number, number, number], face: Face, s: number, w: number, h: number, color: number) {
@@ -543,6 +605,18 @@ function yard(g: Ctx, P: P3, r: number, seed: number, face: Face, dim: (c: numbe
   ] as const) {
     line(g, [a[0], a[1] - 1.4 * r], [c[0], c[1] - 1.4 * r], rgb(dim(0x3d6a2c)), 2.6 * r);
     line(g, [a[0], a[1] - 2.2 * r], [c[0], c[1] - 2.2 * r], rgb(dim(0x5c8a3a), 1, 0.8), 1 * r);
+  }
+  // бяла дървена ограда по предните граници (с прекъсване за пътеката)
+  const picket = rgb(dim(0xf2efe6));
+  for (const side of [0, 1]) {
+    for (let i = 0; i <= 24; i++) {
+      const a = -0.48 + i * 0.04;
+      if (Math.abs(a) < 0.08) continue;
+      const p0 = side === 0 ? P(a, 0.48, 0) : P(0.48, a, 0);
+      line(g, p0, [p0[0], p0[1] - 3.2 * r], picket, 0.7 * r);
+    }
+    const [a0, a1] = side === 0 ? [P(-0.48, 0.48, 2.2), P(0.48, 0.48, 2.2)] : [P(0.48, -0.48, 2.2), P(0.48, 0.48, 2.2)];
+    line(g, a0, a1, picket, 0.6 * r);
   }
   // кола на алеята
   if (h01(seed, 41) < 0.45) carSprite(g, P, r, 0.33, 0.3, h01(seed, 42) < 0.5, pick([0xc0392b, 0xecf0f1, 0x2c3e50, 0x2471a3, 0x7f8c8d], h01(seed, 43)));
@@ -1219,16 +1293,30 @@ function zoneBuilding(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Spri
         // еднофамилна къща (вариант: едноетажна, двуетажна, с гараж, с четирискатен покрив)
         const two = t(2) < 0.45;
         const hh = two ? FLOOR * 2 : FLOOR + 2;
-        const b: [number, number, number, number] = t(3) < 0.5 ? [-0.28, -0.22, 0.24, 0.2] : [-0.22, -0.28, 0.2, 0.24];
+        const b: [number, number, number, number] = t(3) < 0.5 ? [-0.34, -0.26, 0.28, 0.24] : [-0.26, -0.34, 0.24, 0.28];
         const wall = dim(pick(WALLS, t(4)));
         const rc = dim(pick(ROOF_TILES, t(5)));
         // двор с ограда
         yard(g, P, r, v, face, dim);
         shadow(g, P, b[0], b[1], b[2], b[3], hh + 10);
         box(g, P, b[0], b[1], b[2], b[3], 0, hh, { wall });
-        windows(g, P, r, b, 0, hh, { glass: 0x6f8aa0, density: 3.2, w: 0.42, hgt: 0.5, seed: v, lit: 0.1, noSlabs: true });
+        const shut = t(11) < 0.65 ? pick([0x2f5d3a, 0x3b5b7a, 0x7a2e2a, 0x5b4636, 0xe9e4d8], t(12)) : undefined;
+        windows(g, P, r, b, 0, hh, {
+          glass: 0x6f8aa0,
+          density: 3.2,
+          w: 0.42,
+          hgt: 0.5,
+          seed: v,
+          lit: 0.1,
+          noSlabs: true,
+          shutters: shut,
+          flowerBoxes: t(13) < 0.6,
+        });
         door(g, P, b, face, 0.5, 0.16, 8, pick([0x6b4430, 0x3f5a6b, 0x7a2e2a], t(6)));
-        roof(g, P, b, hh, t(7) < 0.3 ? 'hip' : 'gable', rc, wall, 10 + t(8) * 4, v);
+        porch(g, P, b, face, 0.5, wall, rc);
+        const kindRoof = t(7) < 0.3 ? 'hip' : 'gable';
+        roof(g, P, b, hh, kindRoof, rc, wall, 10 + t(8) * 4, v);
+        if (kindRoof === 'gable' && t(14) < 0.55) dormer(g, P, b, hh, wall, rc, face);
         if (t(9) < 0.6) chimney(g, P, b[0] + 0.1, b[1] + 0.12, hh + 4, 7);
         if (t(10) < 0.35 && !two) {
           const gb: [number, number, number, number] = [b[2] + 0.02, b[1] + 0.05, b[2] + 0.2, b[3] - 0.05];
@@ -1249,8 +1337,17 @@ function zoneBuilding(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Spri
             const hh = FLOOR * 2 + 2;
             if (i === 0) shadow(g, P, -0.38, -0.24, 0.38, 0.26, hh + 12);
             box(g, P, b[0], b[1], b[2], b[3], 0, hh, { wall });
-            windows(g, P, r, b, 0, hh, { glass: 0x6f8aa0, density: 6, w: 0.5, seed: v + i, lit: 0.12 });
+            windows(g, P, r, b, 0, hh, {
+              glass: 0x6f8aa0,
+              density: 6,
+              w: 0.5,
+              seed: v + i,
+              lit: 0.12,
+              shutters: pick([0x2f5d3a, 0x3b5b7a, 0x7a2e2a, 0xe9e4d8], t(20 + i)),
+              flowerBoxes: true,
+            });
             door(g, P, b, 'left', 0.5, 0.25, 8, 0x5a3f2c);
+            porch(g, P, b, 'left', 0.5, wall, dim(pick(ROOF_TILES, t(5))));
             roof(g, P, b, hh, 'gable', dim(pick(ROOF_TILES, t(5))), wall, 9, v + i);
             chimney(g, P, b[0] + 0.06, -0.05, hh + 4, 6);
           }

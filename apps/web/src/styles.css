@@ -1883,27 +1883,3 @@ button.avatar:hover {
 .utility-legend .bad {
   color: #fca5a5;
 }
-
-/* ---------- превключвател 2D / 3D ---------- */
-.map-view-switch {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  z-index: 15;
-  display: flex;
-  gap: 6px;
-}
-.map-view-switch button {
-  min-width: 40px;
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid var(--glass-line);
-  background: rgba(11, 18, 34, 0.85);
-  color: #e2e8f0;
-  font-weight: 800;
-  cursor: pointer;
-}
-.map-view-switch button.active {
-  border-color: #2dd4bf;
-  color: #5eead4;
-}

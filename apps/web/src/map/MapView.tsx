@@ -16,20 +16,10 @@ import {
 } from '@gce/shared';
 import { REAL_PLACES, getWorld } from '@gce/world-generation';
 import { IsoRenderer, toTile, type CityRender } from './renderer';
-import { Renderer3D } from '../map3d/Renderer3D';
-
-/** Рисувачът на картата: 2D (изометрични спрайтове) или 3D (Three.js) – с еднакви методи. */
-type MapRenderer = IsoRenderer | Renderer3D;
-
-function loadView3d(): boolean {
-  try {
-    return localStorage.getItem('gce_view') !== '2d';
-  } catch {
-    return true;
-  }
-}
+/** Рисувачът на картата (изометричен 2D). */
+type MapRenderer = IsoRenderer;
 import { computeNeedBadges } from './needBadges';
-import { weatherFor, type DayMode } from './atmosphere';
+import { weatherFor } from './atmosphere';
 import { seasonOf } from './sprites';
 import { REQ_ICON } from '../ui/needs';
 
@@ -49,16 +39,7 @@ export async function undoLast() {
 
 const SEASON_LABEL = { spring: '🌱 Пролет', summer: '☀️ Лято', autumn: '🍂 Есен', winter: '❄️ Зима' } as const;
 const WEATHER_LABEL = { clear: '', rain: '🌧 дъжд', snow: '🌨 сняг', storm: '⛈ буря' } as const;
-const DAY_ICON: Record<DayMode, string> = { auto: '🌓', day: '☀️', night: '🌙' };
-const DAY_TITLE: Record<DayMode, string> = { auto: 'Ден и нощ се сменят', day: 'Винаги ден', night: 'Винаги нощ' };
-function loadDayMode(): DayMode {
-  try {
-    const v = localStorage.getItem('gce_daymode');
-    return v === 'day' || v === 'night' ? v : 'auto';
-  } catch {
-    return 'auto';
-  }
-}
+
 import type { NeedBadge } from './life';
 import { Splash } from '../ui/Brand';
 import { get, post } from '../api';
@@ -123,7 +104,6 @@ function toolColor(tool: Tool): number {
 export function MapView() {
   const host = useRef<HTMLDivElement>(null);
   const r = useRef<MapRenderer | null>(null);
-  const [view3d, setView3d] = useState<boolean>(loadView3d);
   const region = useRef<RegionData>({ parcels: [], cities: [] });
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const [hoverPx, setHoverPx] = useState<{ x: number; y: number } | null>(null);
@@ -142,14 +122,13 @@ export function MapView() {
   toolRef.current = tool;
   const needsRef = useRef<NeedBadge[]>([]);
   const tick = useStore((s) => s.tick);
-  const [dayMode, setDayMode] = useState<DayMode>(loadDayMode);
   const season = seasonOf(gameDate(tick).month);
   const weather = weatherFor(tick, season);
 
   // Инициализация на рисувача (3D или 2D).
   useEffect(() => {
     if (!host.current || !world) return;
-    const renderer: MapRenderer = view3d ? new Renderer3D() : new IsoRenderer();
+    const renderer: MapRenderer = new IsoRenderer();
     let disposed = false;
     renderer.init(host.current).then(() => {
       if (disposed) {
@@ -176,7 +155,7 @@ export function MapView() {
       renderer.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [world?.seed, view3d]);
+  }, [world?.seed]);
 
   const regionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   async function loadRegion() {
@@ -243,8 +222,9 @@ export function MapView() {
   useEffect(() => {
     r.current?.setSeason(season);
     r.current?.setWeather(weather);
-    r.current?.setDayMode(dayMode);
-  }, [season, weather, dayMode, loading]);
+    // винаги ден – без смяна на денонощието
+    r.current?.setDayMode('day');
+  }, [season, weather, loading]);
 
   // Значки „това трябва“ над сградите (липсващ път, ток, вода, тротоар).
   useEffect(() => {
@@ -595,53 +575,12 @@ export function MapView() {
           <Splash text="Генериране на държавата…" />
         </div>
       )}
-      {!loading && !view3d && <Minimap renderer={r as React.RefObject<IsoRenderer | null>} />}
+      {!loading && <Minimap renderer={r} />}
       <div className="map-attrib">Релеф: AWS Terrain Tiles · Граници на областите: geoBoundaries (CC BY 4.0)</div>
       {city?.isOwner && (layer === 'power' || layer === 'water') && <UtilityLegend kind={layer} />}
-      <button
-        className="map-sky glass"
-        title={`${DAY_TITLE[dayMode]} – щракнете за смяна`}
-        onClick={() => {
-          const next: DayMode = dayMode === 'auto' ? 'day' : dayMode === 'day' ? 'night' : 'auto';
-          setDayMode(next);
-          try {
-            localStorage.setItem('gce_daymode', next);
-          } catch {
-            /* без запис */
-          }
-        }}
-      >
-        <span>{DAY_ICON[dayMode]}</span>
+      <div className="map-sky glass" title="Сезон и време">
         <span>{SEASON_LABEL[season]}</span>
         {WEATHER_LABEL[weather] && <span>{WEATHER_LABEL[weather]}</span>}
-      </button>
-      <div className="map-view-switch">
-        <button
-          className={view3d ? 'active' : ''}
-          title={view3d ? 'Превключи към 2D изглед' : 'Превключи към 3D изглед'}
-          onClick={() => {
-            const next = !view3d;
-            try {
-              localStorage.setItem('gce_view', next ? '3d' : '2d');
-            } catch {
-              /* без запис */
-            }
-            setLoading(true);
-            setView3d(next);
-          }}
-        >
-          {view3d ? '3D' : '2D'}
-        </button>
-        {view3d && (
-          <>
-            <button title="Завърти наляво (Q)" onClick={() => (r.current as Renderer3D | null)?.rotate?.(-Math.PI / 8)}>
-              ⟲
-            </button>
-            <button title="Завърти надясно (E)" onClick={() => (r.current as Renderer3D | null)?.rotate?.(Math.PI / 8)}>
-              ⟳
-            </button>
-          </>
-        )}
       </div>
       <div className="map-zoom">
         <button
