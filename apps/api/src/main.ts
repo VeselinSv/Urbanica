@@ -19,7 +19,7 @@ async function bootstrap() {
   const { AppModule } = await import('./app.module');
   const { metrics, prisma } = await import('./common');
   const { ensureWorld } = await import('@gce/domain');
-  await ensureWorld(prisma, process.env.WORLD_SEED ?? 'gce-alpha-1', Number(process.env.TICK_INTERVAL_MS ?? 20000));
+  await ensureWorld(prisma, process.env.WORLD_SEED ?? 'gce-alpha-1', Number(process.env.GAME_DAY_MS ?? 1000));
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: ['log', 'warn', 'error'] });
   app.set('trust proxy', 1);

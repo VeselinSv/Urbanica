@@ -20,8 +20,9 @@ services:
         sync: false
       - key: WORLD_SEED
         value: gce-alpha-1
-      - key: TICK_INTERVAL_MS
-        value: '20000'
+      # един игрови ден = 1 секунда
+      - key: GAME_DAY_MS
+        value: '1000'
       # симулацията върви в уеб услугата (безплатният план няма фонов worker)
       - key: EMBEDDED_WORKER
         value: 'true'

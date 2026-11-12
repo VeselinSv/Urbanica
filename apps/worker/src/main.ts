@@ -14,7 +14,7 @@ const log = (level: string, msg: string, extra: Record<string, unknown> = {}) =>
  */
 async function main() {
   const prisma = getPrisma();
-  const interval = Number(process.env.TICK_INTERVAL_MS ?? 20000);
+  const interval = Number(process.env.GAME_DAY_MS ?? 1000);
   await ensureWorld(prisma, process.env.WORLD_SEED ?? 'gce-alpha-1', interval);
   const sim = runSimulationLoop(prisma, log);
   log('info', 'worker started', { interval });

@@ -16,6 +16,7 @@ import {
   placeOrder,
   resetPlayer,
   currentTick,
+  compactHistory,
 } from '@gce/domain';
 import { BALANCE, ZONES, tileKey } from '@gce/shared';
 import { balance, cityWithRoad, companyIn, expectInvariants, player, prisma, resetDb } from './helpers';
@@ -239,6 +240,18 @@ describe('Град, строителство и собственост', () => {
     // нов град след рестарта
     const again = await foundCity(prisma, p.id, 'Отначало');
     expect(await balance(acc.city(again.id))).toBe(BALANCE.start.cityTreasury);
+    await expectInvariants();
+  });
+
+  it('свиване на старата история: регистърът се обобщава, балансите и инвариантите остават', async () => {
+    const p = await player('Compact');
+    const { city } = await cityWithRoad(p.id);
+    const before = await balance(acc.city(city.id));
+    const rows0 = await prisma.ledgerEntry.count();
+    const n = await compactHistory(prisma, 1_000_000);
+    expect(n).toBeGreaterThan(0);
+    expect(await prisma.ledgerEntry.count()).toBeLessThan(rows0);
+    expect(await balance(acc.city(city.id))).toBe(before);
     await expectInvariants();
   });
 

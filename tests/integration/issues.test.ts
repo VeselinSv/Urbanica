@@ -83,7 +83,9 @@ describe('Сигнали от гражданите', () => {
       data: { cityId: city.id, kind: 'accident', x: road[6].x, y: road[6].y, reporter: 'Тест', message: 'катастрофа', createdTick: 0 },
     });
     const snap = { ...(await snapshot(city.id)), stats: {} };
-    for (let t = 1; t <= 20; t++) await withTx(prisma, (tx) => advanceIssues(tx, snap, t, 1));
+    // до най-тежката степен: два пъти по „escalateDays“ (степен 1→2 и 2→3)
+    const days = ISSUE_TYPES.pothole.escalateDays * 2 + 2;
+    for (let t = 1; t <= days; t++) await withTx(prisma, (tx) => advanceIssues(tx, snap, t, 1));
     const pothole = await prisma.cityIssue.findFirstOrThrow({ where: { cityId: city.id, kind: 'pothole', reporter: 'Тест' } });
     const accident = await prisma.cityIssue.findFirstOrThrow({ where: { cityId: city.id, kind: 'accident', reporter: 'Тест' } });
     expect(pothole.severity).toBe(3);

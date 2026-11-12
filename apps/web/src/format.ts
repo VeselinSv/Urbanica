@@ -77,6 +77,7 @@ export const KIND_LABELS: Record<string, string> = {
   CONTRACT_PENALTY: 'Неустойка',
   WALLET_TO_CITY: 'Превод от портфейла',
   CITY_FOUNDING: 'Основаване на град',
+  CITY_DAILY: 'Дневен баланс (данъци − разходи)',
   SHARE_ISSUE: 'Емисия акции',
   ASSET_SALE: 'Продажба на актив',
 };

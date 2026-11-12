@@ -9,7 +9,7 @@
 import { newCanvas } from './canvas';
 import { BALANCE, ZONES, hasSidewalk, isWalkable, type TileState } from '@gce/shared';
 import { HILLS, MOUNTAINS, SEA, Terrain, WATER_LAKE, WATER_OCEAN, WATER_RIVER, type Pt, type WorldGenerator } from '@gce/world-generation';
-import { FLOOR, getSprite, h01, mixc, rgb, type BuildingKey, type Season, type TreeKind } from './sprites';
+import { FLOOR, getSprite, h01, mixc, rgb, type BuildingKey, type Season, type Span, type TreeKind } from './sprites';
 import { PATH_WIDTH, ROAD_GEOM } from './roadgeom';
 
 export const CHUNK = BALANCE.world.chunkSize;
@@ -890,6 +890,30 @@ function treeKind(gen: WorldGenerator, x: number, y: number, s: number): TreeKin
   return s < 0.6 ? 'oak' : s < 0.8 ? 'birch' : s < 0.9 ? 'poplar' : 'bush';
 }
 
+/**
+ * Обединяване на съседни жилищни парцели на едно ниво (детерминирано – всеки чанк вижда едно и също):
+ * подравнен блок 2×2 → една сграда; иначе двойка по X (четно x), иначе двойка по Y (четно y).
+ * Връща групата на плочката: кой е „собственикът“ (рисува сградата) и какъв е размерът.
+ */
+function homeGroup(lookup: TileLookup, x: number, y: number): { ox: number; oy: number; span: Span } | null {
+  const t = lookup(x, y);
+  if (t?.t !== 'zone' || t.z !== 'R' || t.lvl < 1 || t.ab) return null;
+  const same = (a: number, b: number) => {
+    const o = lookup(a, b);
+    return o?.t === 'zone' && o.z === 'R' && o.lvl === t.lvl && !o.ab;
+  };
+  const xe = x - (((x % 2) + 2) % 2);
+  const ye = y - (((y % 2) + 2) % 2);
+  if (same(xe, ye) && same(xe + 1, ye) && same(xe, ye + 1) && same(xe + 1, ye + 1)) return { ox: xe, oy: ye, span: 'xy' };
+  const xPair = (a: number, b: number) => {
+    const ax = a - (((a % 2) + 2) % 2);
+    return same(ax, b) && same(ax + 1, b);
+  };
+  if (xPair(x, y)) return { ox: xe, oy: y, span: 'x' };
+  if (same(x, ye) && same(x, ye + 1) && !xPair(x, ye) && !xPair(x, ye + 1)) return { ox: x, oy: ye, span: 'y' };
+  return null;
+}
+
 function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0: number, opts: PaintOptions): Obj[] {
   const out: Obj[] = [];
   const sink: { push: (o: CityActor) => void } = opts.actors ?? out;
@@ -905,7 +929,17 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
         const face = lookup(x, y + 1)?.t === 'road' || !(lookup(x + 1, y)?.t === 'road') ? 'left' : 'right';
         const v = Math.floor(h01(x, y, 11) * 997);
         if (t.t === 'zone') {
-          if (t.lvl > 0) sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'zone', z: t.z, lvl: t.lvl, v: v % 13, face, ab: t.ab } });
+          const grp = t.lvl > 0 ? homeGroup(lookup, x, y) : null;
+          if (grp) {
+            // само „собственикът“ на групата рисува общата сграда (в центъра на групата)
+            if (grp.ox === x && grp.oy === y) {
+              const wx = x + (grp.span === 'y' ? 0.5 : 1);
+              const wy = y + (grp.span === 'x' ? 0.5 : 1);
+              const gface =
+                lookup(x, y + (grp.span === 'x' ? 1 : 2))?.t === 'road' || !(lookup(x + (grp.span === 'y' ? 1 : 2), y)?.t === 'road') ? 'left' : 'right';
+              sink.push({ d: wx + wy, wx, wy, key: { k: 'zone', z: t.z, lvl: t.lvl, v: v % 13, face: gface, ab: t.ab, span: grp.span } });
+            }
+          } else if (t.lvl > 0) sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'zone', z: t.z, lvl: t.lvl, v: v % 13, face, ab: t.ab } });
           else if (t.prog > 0) sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'construction', v: v % 9 } });
         } else if (t.t === 'service') sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'service', s: t.s, v: v % 5, face } });
         else if (t.t === 'facility') sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'facility', f: t.f, v: v % 5, face } });

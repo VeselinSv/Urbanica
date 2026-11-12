@@ -7,7 +7,7 @@ async function main() {
   loadEnv();
   requireEnv('DATABASE_URL');
   const prisma = getPrisma();
-  await ensureWorld(prisma, process.env.WORLD_SEED ?? 'gce-alpha-1', Number(process.env.TICK_INTERVAL_MS ?? 20000));
+  await ensureWorld(prisma, process.env.WORLD_SEED ?? 'gce-alpha-1', Number(process.env.GAME_DAY_MS ?? 1000));
   console.log('World ready:', await worldInfo(prisma));
   await prisma.$disconnect();
 }

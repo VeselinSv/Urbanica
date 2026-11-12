@@ -19,13 +19,17 @@ export function onChat(fn: (m: ChatMsg) => void) {
 }
 
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+let lastRefresh = 0;
+/** Опресняване на града и панелите – най-много веднъж на ~2.5 s (денят е 1 секунда). */
 function scheduleRefresh() {
   if (refreshTimer) return;
+  const wait = Math.max(300, 2500 - (Date.now() - lastRefresh));
   refreshTimer = setTimeout(async () => {
     refreshTimer = null;
+    lastRefresh = Date.now();
     await Promise.allSettled([refreshCity(), refreshMe()]);
     bumpData();
-  }, 300);
+  }, wait);
 }
 
 function onTick(tick: number, at?: string, now?: string) {

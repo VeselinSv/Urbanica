@@ -1048,7 +1048,10 @@ for (const f of Object.values(FACILITIES)) {
 }
 for (const t of Object.values(TECHS)) t.dailyCost = Math.round(t.dailyCost * ECON);
 // ремонтите по сигналите – реални цени на екип с техника; сигналите са по-редки (по-лесна игра)
+// Игровият ден е 1 секунда: сигналите идват ~15 пъти по-рядко на ден и се влошават ~15 пъти по-бавно
+// (в реално време – колкото преди, когато денят беше 20 секунди).
 for (const i of Object.values(ISSUE_TYPES)) {
   i.fixCost *= 20;
-  i.rate *= 0.6;
+  i.rate *= 0.6 / 15;
+  i.escalateDays *= 15;
 }

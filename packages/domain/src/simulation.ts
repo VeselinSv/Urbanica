@@ -14,6 +14,7 @@ import { centralBankRate, priceIndex, produce, requiredJobs, techEffects } from 
 import { facilityLoad, stepCity, stepCityDays, type CityContext, type CityStepResult } from '@gce/game-simulation';
 import { Prisma, withTx, type PrismaClient } from '@gce/database';
 import { SYS, acc, transfer, tryTransfer } from './ledger';
+import { compactHistory } from './maintenance';
 import { refPrices, territoryKeys, worldGen, worldRow } from './world';
 import { addGoods, storageCapacity, storageUsed, tryTakeGoods } from './inventory';
 import { companyTechs, processLicenses, processResearch } from './research';
@@ -130,31 +131,23 @@ export async function processCity(
       });
       if (upd.count !== 1) return false;
       const cityAcc = acc.city(cityId);
-      for (const [cat, amount] of Object.entries(r.income)) {
+      // Един общ превод на ден (приходи − разходи): при ден от 1 секунда отделните видове биха били
+      // десетки заявки и милиони редове. Разбивката по видове остава в статистиката на града.
+      let net = 0;
+      for (const amount of Object.values(r.income)) net += Math.round(amount);
+      for (const [cat, amount] of Object.entries(r.expenses)) if (cat !== 'energy_purchases') net -= Math.round(amount);
+      if (net !== 0)
         await transfer(tx, {
-          from: SYS.WORLD,
-          to: cityAcc,
-          amount,
-          kind: `CITY_${cat.toUpperCase()}`,
+          from: net > 0 ? SYS.WORLD : cityAcc,
+          to: net > 0 ? cityAcc : SYS.WORLD,
+          amount: Math.abs(net),
+          kind: 'CITY_DAILY',
           tick,
-          key: `city:${cityId}:${tick}:in:${cat}`,
+          key: `city:${cityId}:${tick}:net`,
           refType: 'City',
           refId: cityId,
+          memo: `приходи ${Math.round(Object.values(r.income).reduce((a, b) => a + b, 0) / 100)} € · разходи ${Math.round(Object.entries(r.expenses).reduce((a, [k, v]) => a + (k === 'energy_purchases' ? 0 : v), 0) / 100)} €`,
         });
-      }
-      for (const [cat, amount] of Object.entries(r.expenses)) {
-        if (cat === 'energy_purchases') continue;
-        await transfer(tx, {
-          from: cityAcc,
-          to: SYS.WORLD,
-          amount,
-          kind: `CITY_${cat.toUpperCase()}`,
-          tick,
-          key: `city:${cityId}:${tick}:out:${cat}`,
-          refType: 'City',
-          refId: cityId,
-        });
-      }
       for (const f of facilities) {
         const s = r.facilityStatus[f.id];
         if (!s) continue;
@@ -437,7 +430,11 @@ export async function processTick(prisma: PrismaClient): Promise<TickReport> {
     const cities = await prisma.city.findMany({ select: { id: true, ownerId: true } });
     const base = { worldAttractiveness: w.avgAttractiveness, coalPrice: refs.coal, foodPriceRatio: refs.food / GOODS.food.basePrice, priceIndex: pi };
     let n = 0;
-    for (const c of cities) if ((await processCity(prisma, c.id, tick, base, active.has(c.ownerId))) === 'done') n++;
+    // по няколко града едновременно – времето на тика е времето на мрежата до базата, не на процесора
+    for (let i = 0; i < cities.length; i += 4) {
+      const res = await Promise.all(cities.slice(i, i + 4).map((c) => processCity(prisma, c.id, tick, base, active.has(c.ownerId))));
+      n += res.filter((x) => x === 'done').length;
+    }
     counts.cities = n;
   });
   await time('companies', async () => {
@@ -455,18 +452,20 @@ export async function processTick(prisma: PrismaClient): Promise<TickReport> {
   });
   await time('market', async () => {
     const cities = await prisma.city.findMany({ select: { id: true, stats: true } });
-    for (const g of GOOD_IDS) {
-      const perCity = new Map<string, number>();
-      let total = 0;
-      for (const c of cities) {
-        const d = ((c.stats as Record<string, unknown>).retailDemand as Partial<Record<GoodId, number>> | undefined)?.[g] ?? 0;
-        if (d > 0) {
-          perCity.set(c.id, d);
-          total += d;
+    await Promise.all(
+      GOOD_IDS.map((g) => {
+        const perCity = new Map<string, number>();
+        let total = 0;
+        for (const c of cities) {
+          const d = ((c.stats as Record<string, unknown>).retailDemand as Partial<Record<GoodId, number>> | undefined)?.[g] ?? 0;
+          if (d > 0) {
+            perCity.set(c.id, d);
+            total += d;
+          }
         }
-      }
-      await marketDailyGood(prisma, g, tick, total, refs, perCity);
-    }
+        return marketDailyGood(prisma, g, tick, total, refs, perCity);
+      }),
+    );
   });
   await time('finance', async () => {
     const l = await processLoans(prisma, tick);
@@ -481,6 +480,7 @@ export async function processTick(prisma: PrismaClient): Promise<TickReport> {
     if (isMonthEnd(tick)) await updateRatings(prisma);
     await macro(prisma, tick);
     if (tick % 30 === 0) counts.chatPurged = await purgeOldChat(prisma);
+    if (tick % 600 === 0) counts.compacted = await compactHistory(prisma, tick);
   });
 
   const durationMs = Date.now() - started;

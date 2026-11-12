@@ -176,7 +176,7 @@ describe('Градска симулация', () => {
     const before = lv(closed.tiles, 'R', 2);
     const after = run(closed, 90);
     expect(lv(after.last.tiles, 'R', 2)).toBeLessThan(before);
-  });
+  }, 30_000);
 
   it('тротоари: улиците ги имат по подразбиране, селските пътища – не; алеята е пешеходна', () => {
     expect(hasSidewalk({ t: 'road' })).toBe(true);

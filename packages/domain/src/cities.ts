@@ -423,7 +423,8 @@ interface LastBuild {
 }
 
 /** Колко игрови дни след строителството то може да се отмени. */
-export const UNDO_WINDOW_DAYS = 10;
+/** Ден = 1 секунда: 180 дни ≈ 3 минути за „Отмени“. */
+export const UNDO_WINDOW_DAYS = 180;
 
 /**
  * Същото ли е построеното на плочката (без напредъка на строежа, заетостта и състоянието, които
@@ -445,7 +446,6 @@ export async function undoBuild(prisma: PrismaClient, userId: string, cityId: st
     const lb = city.lastBuild as unknown as LastBuild | null;
     if (!lb) throw bad('Няма какво да се отмени');
     const tick = await currentTick(tx);
-    // един игрови ден е ~20 секунди – оставяме няколко минути за отмяна
     if (tick - lb.tick > UNDO_WINDOW_DAYS) throw bad(`Може да се отмени само строителство от последните ${UNDO_WINDOW_DAYS} игрови дни`);
     const tiles = { ...(city.tiles as unknown as TileMap) };
     for (const [k, v] of Object.entries(lb.next))
