@@ -19,6 +19,8 @@ export interface Goal {
   /** Прогрес 0..1 (по желание) и текст към него. */
   progress?: (c: CityLike) => { v: number; label: string };
   tool?: Tool;
+  /** Инструмент и надпис според състоянието на града (по-точни от tool/button). */
+  pick?: (c: CityLike) => { tool: Tool; button: string };
   /** Действие вместо инструмент (напр. отваряне на панел). */
   run?: () => void;
   button?: string;
@@ -82,6 +84,8 @@ export const GOALS: Goal[] = [
     }),
     tool: { kind: 'zone', zone: 'C' },
     button: 'Търговска зона',
+    pick: (c) =>
+      zones(c, 'C') < 4 ? { tool: { kind: 'zone', zone: 'C' }, button: 'Търговска зона' } : { tool: { kind: 'zone', zone: 'I' }, button: 'Индустриална зона' },
   },
   {
     id: 'school',
@@ -193,6 +197,29 @@ export const GOALS: Goal[] = [
   },
 ];
 
+/** Надписът на бутона на етапа за текущия град. */
+export function goalButton(g: Goal, c: CityLike): string | undefined {
+  return g.pick ? g.pick(c).button : g.button;
+}
+
+const JOB_ZONES = [
+  { zone: 'I' as const, label: 'Индустриална зона', name: 'индустрия' },
+  { zone: 'C' as const, label: 'Търговска зона', name: 'търговия' },
+  { zone: 'O' as const, label: 'Офисна зона', name: 'офиси' },
+];
+
+/** Зоната за работни места с най-голямо търсене (лентите „Търсене по зони“) – там новите сгради ще се построят. */
+export function bestJobZone(c: CityLike) {
+  const d = ((c.stats as { demand?: Record<string, number> } | undefined)?.demand ?? {}) as Record<string, number>;
+  const best = [...JOB_ZONES].sort((a, b) => (d[b.zone] ?? 0) - (d[a.zone] ?? 0))[0];
+  const v = d[best.zone] ?? 0;
+  const why =
+    v > 0.05
+      ? `Най-голямо е търсенето на ${best.name} (${Math.round(v * 100)}%) – зонирайте ${best.name} до път с ток и вода.`
+      : `Зонирайте ${best.name} до път с ток и вода – свободните работници привличат бизнес и търсенето ще расте.`;
+  return { ...best, why };
+}
+
 export function planState(c: CityLike) {
   const ctx = { companies: getState().companies.filter((x) => x.roles.length).length };
   const done = GOALS.map((g) => g.done(c, ctx));
@@ -201,7 +228,10 @@ export function planState(c: CityLike) {
 }
 
 export function runGoal(g: Goal) {
-  if (g.run) g.run();
+  const c = getState().city;
+  const p = c && g.pick ? g.pick(c) : null;
+  if (p) setState({ tool: p.tool });
+  else if (g.run) g.run();
   else if (g.tool) setState({ tool: g.tool });
 }
 
@@ -239,9 +269,9 @@ export function DevPlan() {
               {p.label}
             </div>
           )}
-          {cur.button && (
+          {goalButton(cur, city) && (
             <button className="btn primary small" onClick={() => runGoal(cur)}>
-              {cur.button}
+              {goalButton(cur, city)}
             </button>
           )}
         </div>
@@ -256,9 +286,9 @@ export function DevPlan() {
           {GOALS.map((g, i) => (
             <li key={g.id} className={st.done[i] ? 'done' : i === st.next ? 'cur' : ''}>
               <span>{st.done[i] ? '✓' : g.icon}</span> {g.title}
-              {!st.done[i] && g.button && (
+              {!st.done[i] && goalButton(g, city) && (
                 <button className="link small" onClick={() => runGoal(g)}>
-                  {g.button}
+                  {goalButton(g, city)}
                 </button>
               )}
             </li>

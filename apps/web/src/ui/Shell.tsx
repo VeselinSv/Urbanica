@@ -22,7 +22,7 @@ import { Panels, PANEL_GROUPS, groupOf } from './panels/Panels';
 import { IssueCard, initials } from './panels/IssuesPanel';
 import { BRAND, BrandLockup } from './Brand';
 import { resetGame } from './reset';
-import { GOALS, planState, runGoal } from './plan';
+import { GOALS, bestJobZone, goalButton, planState, runGoal } from './plan';
 import { REQ_ICON, needsLine, reqTool, reqToolLabel, toolNeeds } from './needs';
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
@@ -94,11 +94,23 @@ function TopBar() {
             <b>{pct(s?.happiness ?? 0, 0)}</b>
           </span>
         </span>
-        <span className="pill" title="Ток: произведен / нужен">
+        <span
+          className="pill clickable"
+          role="button"
+          tabIndex={0}
+          title="Ток: произведен / нужен – щракнете, за да видите докъде стига"
+          onClick={() => setState((st) => ({ layer: st.layer === 'power' ? 'none' : 'power' }))}
+        >
           <em>⚡ Ток</em>
           <Gauge value={powerR} color={powerR >= 1 ? '#facc15' : '#ef4444'} />
         </span>
-        <span className="pill" title="Вода: подадена / нужна">
+        <span
+          className="pill clickable"
+          role="button"
+          tabIndex={0}
+          title="Вода: подадена / нужна – щракнете, за да видите докъде стига"
+          onClick={() => setState((st) => ({ layer: st.layer === 'water' ? 'none' : 'water' }))}
+        >
           <em>💧 Вода</em>
           <Gauge value={waterR} color={waterR >= 1 ? '#38bdf8' : '#ef4444'} />
         </span>
@@ -495,12 +507,14 @@ function advice(): Advice | null {
     .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0));
   // пазарът на труда: безработни или липсващи работници – най-честата причина градът да не печели
   const S = city.stats as { population?: number; unemploymentRate?: number; vacancies?: number; workforce?: number } | undefined;
-  if ((S?.population ?? 0) > 300 && (S?.unemploymentRate ?? 0) > 0.15)
+  if ((S?.population ?? 0) > 300 && (S?.unemploymentRate ?? 0) > 0.15) {
+    const job = bestJobZone(city);
     return {
       icon: '💼',
-      text: `Безработица ${Math.round((S?.unemploymentRate ?? 0) * 100)}% – хората нямат работа и не плащат данъци. Зонирайте търговия, индустрия или офиси.`,
-      action: { label: 'Търговска зона', run: () => setState({ tool: { kind: 'zone', zone: 'C' } }) },
+      text: `Безработица ${Math.round((S?.unemploymentRate ?? 0) * 100)}% – хората нямат работа и не плащат данъци. ${job.why}`,
+      action: { label: job.label, run: () => setState({ tool: { kind: 'zone', zone: job.zone } }) },
     };
+  }
   if ((S?.workforce ?? 0) > 0 && (S?.vacancies ?? 0) > (S?.workforce ?? 0) * 0.25)
     return {
       icon: '🏠',
@@ -514,7 +528,7 @@ function advice(): Advice | null {
     return {
       icon: g.icon,
       text: `Етап ${early.next + 1}/${early.total} – ${g.title}: ${g.why}`,
-      action: g.button ? { label: g.button, run: () => runGoal(g) } : undefined,
+      action: goalButton(g, city) ? { label: goalButton(g, city)!, run: () => runGoal(g) } : undefined,
     };
   }
   if (blockers.length) {
@@ -540,7 +554,7 @@ function advice(): Advice | null {
     return {
       icon: g.icon,
       text: `Етап ${ps.next + 1}/${ps.total} – ${g.title}: ${g.why}`,
-      action: g.button ? { label: g.button, run: () => runGoal(g) } : undefined,
+      action: goalButton(g, city) ? { label: goalButton(g, city)!, run: () => runGoal(g) } : undefined,
     };
   }
   return { icon: '✨', text: 'Всички етапи са изпълнени – градът е голям и печеливш. Разширете го с нова земя или нов град.' };

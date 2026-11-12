@@ -505,11 +505,18 @@ export function stepCity(input: CityInput): CityStepResult {
   const migration = clamp(0.5 * vacancyPull + 1.0 * (attractiveness - ctx.worldAttractiveness) + bootstrap + 0.1, -1, 1);
   const occRate = housingCap > 0 ? totalPop / housingCap : 1;
   const ratio = (need: number, have: number, floor: number) => (need - have) / Math.max(floor, need);
+  // Свободните работници привличат бизнес: безработицата вдига търсенето на индустрия, търговия и офиси.
+  const idleL0 = labor.unemployedByEdu[0];
+  const idleL12 = labor.unemployedByEdu[1] + labor.unemployedByEdu[2];
   const demand: Record<ZoneType, number> = {
     R: clamp(0.6 * migration + (occRate - 0.8) * 2 - (T.income - D0.income) * E.income - (T.property - D0.property) * E.property + subsidyEffect('R'), -1, 1),
-    C: clamp(ratio(totalPop * 0.12 + 6 * POP, zoneJobs.C, 20 * POP) + bizTax + subsidyEffect('C'), -1, 1),
-    I: clamp(ratio(workforce * 0.3 + 12 * POP, zoneJobs.I, 20 * POP) + 0.3 * (ctx.priceIndex - 1) + bizTax + subsidyEffect('I'), -1, 1),
-    O: clamp(ratio(workersL12 * 0.35, zoneJobs.O, 20 * POP) + bizTax + subsidyEffect('O'), -1, 1),
+    C: clamp(ratio(totalPop * 0.12 + (idleL0 + idleL12) * 0.3 + 6 * POP, zoneJobs.C, 20 * POP) + bizTax + subsidyEffect('C'), -1, 1),
+    I: clamp(
+      ratio(workforce * 0.3 + idleL0 * 0.6 + idleL12 * 0.3 + 12 * POP, zoneJobs.I, 20 * POP) + 0.3 * (ctx.priceIndex - 1) + bizTax + subsidyEffect('I'),
+      -1,
+      1,
+    ),
+    O: clamp(ratio(workersL12 * 0.35 + idleL12 * 0.5, zoneJobs.O, 20 * POP) + bizTax + subsidyEffect('O'), -1, 1),
     A: clamp(ratio(totalPop * 0.03 + 8 * POP, zoneJobs.A, 10 * POP) + 0.3 * (ctx.foodPriceRatio - 1) + bizTax + subsidyEffect('A'), -1, 1),
     L: clamp(ratio((zoneJobs.I + zoneJobs.A + facilityJobs[0] + facilityJobs[1]) * 0.15, zoneJobs.L, 10 * POP) + bizTax + subsidyEffect('L'), -1, 1),
     H: clamp(ratio(workers[2] * 0.5 + (hasUniversity ? 20 * POP : 0), zoneJobs.H, 10 * POP) + bizTax + subsidyEffect('H'), -1, 1),

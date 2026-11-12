@@ -271,10 +271,14 @@ export function MapView() {
       rr.drawOverlay(null, layer);
       return;
     }
+    if (layer === 'power' || layer === 'water') {
+      // обхватът се смята направо от плочките: ток и вода стигат до всяка плочка на до 2 плочки от път
+      rr.drawOverlay(utilityReach(city, layer), layer);
+      return;
+    }
     get<Record<string, Record<string, number>>>(`/cities/${city.id}/layers`)
       .then((d) => {
-        const key = layer === 'power' ? 'powered' : layer === 'water' ? 'watered' : layer;
-        r.current?.drawOverlay(d[key] ?? {}, layer);
+        r.current?.drawOverlay(d[layer] ?? {}, layer);
       })
       .catch(() => undefined);
   }, [layer, city, version]);
@@ -580,6 +584,7 @@ export function MapView() {
       )}
       {!loading && <Minimap renderer={r} />}
       <div className="map-attrib">Релеф: AWS Terrain Tiles · Граници на областите: geoBoundaries (CC BY 4.0)</div>
+      {city?.isOwner && (layer === 'power' || layer === 'water') && <UtilityLegend kind={layer} />}
       <button
         className="map-sky glass"
         title={`${DAY_TITLE[dayMode]} – щракнете за смяна`}
@@ -662,6 +667,79 @@ export function MapView() {
 }
 
 /** Карта при посочване на сграда: какво е и какво ѝ липсва (за следващото ниво или за да се построи). */
+/**
+ * Докъде стигат токът и водата: 1 – има (до път и мощността стига), 0.5 – до път, но централите/помпите
+ * не стигат, 0.2 – до път, но още няма централа/помпа, 0 – далеч от път (там няма да има никога).
+ */
+function utilityReach(city: NonNullable<ReturnType<typeof getState>['city']>, kind: 'power' | 'water'): Record<string, number> {
+  const tiles = city.tiles as TileMap;
+  const reach = new Set<string>();
+  for (const [k, t] of Object.entries(tiles)) {
+    if (t.t !== 'road') continue;
+    const [x, y] = k.split(',').map(Number);
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (Math.abs(dx) + Math.abs(dy) <= 2) reach.add(tileKey(x + dx, y + dy));
+  }
+  const st = (city.stats as { power?: { supply: number; ratio: number }; water?: { supply: number; ratio: number } } | undefined)?.[kind];
+  const level = !st || st.supply <= 0 ? 0.2 : st.ratio < 0.99 ? 0.5 : 1;
+  const P = BALANCE.world.parcelSize;
+  const out: Record<string, number> = {};
+  for (const p of city.parcels)
+    for (let j = 0; j < P; j++)
+      for (let i = 0; i < P; i++) {
+        const k = tileKey(p.px * P + i, p.py * P + j);
+        out[k] = reach.has(k) ? level : 0;
+      }
+  return out;
+}
+
+/** Легенда на слоя „Ток“ / „Вода“: колко се произвежда и трябва, какво значат цветовете, бутон за още мощност. */
+function UtilityLegend({ kind }: { kind: 'power' | 'water' }) {
+  const city = useStore((s) => s.city);
+  const st = (city?.stats as { power?: { supply: number; demand: number }; water?: { supply: number; demand: number } } | undefined)?.[kind];
+  const isP = kind === 'power';
+  const supply = Math.round(st?.supply ?? 0);
+  const demand = Math.round(st?.demand ?? 0);
+  const spare = supply - demand;
+  return (
+    <div className="utility-legend glass">
+      <div className="ul-head">
+        <b>{isP ? '⚡ Докъде стига токът' : '💧 Докъде стига водата'}</b>
+        <button className="link small" onClick={() => setState({ layer: 'none' })}>
+          ✕ Затвори
+        </button>
+      </div>
+      <div className="small">
+        {isP ? 'Произвеждат се' : 'Подават се'} <b>{supply}</b> · нужни <b>{demand}</b> ·{' '}
+        {spare >= 0 ? (
+          <span className="good">резерв {spare} – стига и за нови сгради</span>
+        ) : (
+          <span className="bad">недостиг {-spare} – новите сгради чакат</span>
+        )}
+      </div>
+      <div className="ul-keys small">
+        <span>
+          <i style={{ background: isP ? '#facc15' : '#38bdf8' }} /> има {isP ? 'ток' : 'вода'}
+        </span>
+        <span>
+          <i style={{ background: '#f97316' }} /> до път, но {isP ? 'централите' : 'помпите'} не стигат
+        </span>
+        <span>
+          <i style={{ background: '#ef4444' }} /> далеч от път – няма да има
+        </span>
+      </div>
+      <div className="small muted">
+        {isP ? 'Токът' : 'Водата'} стига до всяка плочка на до 2 плочки от улица. {isP ? '' : 'Помпа до река дава много повече вода. '}
+        {spare < 0 || supply <= 0 ? 'Постройте още:' : ''}
+      </div>
+      {(spare < 0 || supply <= 0 || spare < demand * 0.15) && (
+        <button className="btn primary small" onClick={() => setState({ tool: { kind: 'service', service: isP ? 'power_wind' : 'water_pump' }, layer: kind })}>
+          {isP ? '+ Вятърна централа' : '+ Помпена станция'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function HoverCard({ tile, info, x, y }: { tile: TileMap[string]; info?: { next: string[]; keep: string[] }; x: number; y: number }) {
   const miss = info ? [...new Set([...info.keep, ...info.next])].filter((r) => r !== 'occupancy' && r !== 'demand') : [];
   return (

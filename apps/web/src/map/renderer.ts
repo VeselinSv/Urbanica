@@ -904,14 +904,14 @@ export class IsoRenderer {
       if (kind === 'landValue') {
         t = Math.min(1, v / 2);
         color = mix(0xef4444, 0x22c55e, t);
-      } else if (kind === 'power' || kind === 'water') color = v > 0 ? (kind === 'power' ? 0xfacc15 : 0x38bdf8) : 0xef4444;
+      } else if (kind === 'power' || kind === 'water') color = v >= 1 ? (kind === 'power' ? 0xfacc15 : 0x38bdf8) : v >= 0.2 ? 0xf97316 : 0xef4444;
       else if (kind === 'pollution') color = mix(0xfef08a, 0x7f1d1d, t);
       else if (kind === 'traffic') {
         t = Math.min(1, v);
         color = mix(0x22c55e, 0xdc2626, t);
       } else color = mix(0x1e40af, 0xf472b6, t);
       diamond(g, x, y);
-      g.fill({ color, alpha: kind === 'power' || kind === 'water' ? 0.5 : 0.2 + 0.45 * t });
+      g.fill({ color, alpha: kind === 'power' || kind === 'water' ? (v > 0 ? 0.45 : 0.22) : 0.2 + 0.45 * t });
     }
   }
 

@@ -1839,3 +1839,47 @@ button.avatar:hover {
 .plan-list li .link {
   margin-left: 6px;
 }
+
+/* ---------- слой „Ток“ / „Вода“ ---------- */
+.pill.clickable {
+  cursor: pointer;
+}
+.pill.clickable:hover {
+  border-color: #2dd4bf88;
+}
+.utility-legend {
+  position: absolute;
+  left: 50%;
+  top: 150px;
+  transform: translateX(-50%);
+  z-index: 22;
+  width: min(440px, calc(100% - 32px));
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.utility-legend .ul-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.utility-legend .ul-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.utility-legend .ul-keys i {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+.utility-legend .good {
+  color: #86efac;
+}
+.utility-legend .bad {
+  color: #fca5a5;
+}
