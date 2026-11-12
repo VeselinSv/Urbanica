@@ -61,6 +61,7 @@ export async function worldInfo(db: PrismaClient): Promise<WorldInfo> {
     tick: w.tick,
     tickIntervalMs: w.tickIntervalMs,
     lastTickAt: w.lastTickAt.toISOString(),
+    serverTime: new Date().toISOString(),
     baseRate: w.baseRate,
     priceIndex: w.priceIndex,
   };

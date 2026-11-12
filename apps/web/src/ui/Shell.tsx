@@ -17,7 +17,7 @@ import {
 import { MapView, undoLast } from '../map/MapView';
 import { Tutorial } from './Tutorial';
 import { errorToast, getState, setState, useStore, type Layer, type Tool } from '../store';
-import { dateLabel, money, num, pct } from '../format';
+import { dateLabel, money, moneyExact, num, pct } from '../format';
 import { Panels, PANEL_GROUPS, groupOf } from './panels/Panels';
 import { IssueCard, initials } from './panels/IssuesPanel';
 import { BRAND, BrandLockup } from './Brand';
@@ -76,7 +76,7 @@ function TopBar() {
       <div className="kpis">
         <span className="pill" title="Бюджет на града и нетен резултат на ден">
           <em>Бюджет</em>
-          <b className={(city?.treasury ?? 0) < 0 ? 'bad' : ''}>{money(city?.treasury)}</b>
+          <b className={(city?.treasury ?? 0) < 0 ? 'bad' : ''}>{moneyExact(city?.treasury)}</b>
           <small className={(s?.net ?? 0) >= 0 ? 'good' : 'bad'}>
             {(s?.net ?? 0) >= 0 ? '▲' : '▼'} {money(Math.abs(s?.net ?? 0))}/ден
           </small>
@@ -124,7 +124,7 @@ function TopBar() {
       </button>
       <div className="user">
         <span className="wallet" title="Личен портфейл">
-          👛 {money(me?.wallet)}
+          👛 {moneyExact(me?.wallet)}
         </span>
         <button className="avatar" title={`${me?.user.username ?? ''} – меню`} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>
           {initials(me?.user.username ?? '?')}
@@ -259,7 +259,8 @@ function Toolbar() {
   const [group, setGroup] = useState<Group>(null);
   const is = (t: Tool) => JSON.stringify(t) === JSON.stringify(tool);
   const pick = (t: Tool) => {
-    setState({ tool: t });
+    // на по-малък екран панелът отстрани закрива картата – при строене го прибираме
+    setState(t.kind !== 'select' && window.innerWidth < 1400 ? { tool: t, panelOpen: false } : { tool: t });
     setGroup(null);
   };
   const toggle = (g: Group) => setGroup(group === g ? null : g);
@@ -497,7 +498,7 @@ function advice(): Advice | null {
     const fix = reqTool(req);
     return {
       icon: REQ_ICON[req] ?? '⬆',
-      text: `${n} сгради не могат да се надградят: липсва „${UPGRADE_REQUIREMENT_LABELS[req]}“.`,
+      text: `${n === 1 ? '1 сграда не може да се надгради' : `${n} сгради не могат да се надградят`}: липсва „${UPGRADE_REQUIREMENT_LABELS[req]}“.`,
       action: fix ? { label: reqToolLabel(req), run: () => setState({ tool: fix }) } : undefined,
     };
   }
@@ -540,13 +541,32 @@ function Advisor() {
 function CityVoice() {
   const issues = useStore((s) => s.issues);
   const city = useStore((s) => s.city);
-  const [open, setOpen] = useState(true);
+  const building = useStore((s) => s.tool.kind !== 'select');
+  const [pref, setPref] = useState(() => {
+    try {
+      return localStorage.getItem('gce_voice') !== 'closed';
+    } catch {
+      return true;
+    }
+  });
+  const setOpen = (v: boolean) => {
+    setPref(v);
+    try {
+      localStorage.setItem('gce_voice', v ? 'open' : 'closed');
+    } catch {
+      /* без запомняне */
+    }
+  };
   if (!city?.isOwner) return null;
-  const list = issues.filter((i) => i.status === 'OPEN').slice(0, 3);
+  // докато се строи, карето се свива – картата трябва да се вижда
+  const open = pref && !building;
+  const list = issues.filter((i) => i.status === 'OPEN').slice(0, window.innerHeight < 820 ? 2 : 3);
   return (
     <section className={`voice glass ${open ? '' : 'collapsed'}`} aria-label="Гласът на града">
-      <header onClick={() => setOpen(!open)}>
-        <span>🗣 Гласът на града</span>
+      <header onClick={() => setOpen(!open)} title={open ? 'Свий' : 'Покажи сигналите'}>
+        <span>
+          <i className="voice-chev">{open ? '▾' : '▸'}</i> 🗣 Гласът на града
+        </span>
         <b>{issues.filter((i) => i.status === 'OPEN').length || '✓'}</b>
       </header>
       {open &&

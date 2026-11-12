@@ -247,11 +247,12 @@ export class WorldGenerator {
     return !isWater(this.terrain[y * this.size + x] as Terrain);
   }
 
-  /** Строителен множител на цената според терена (мостове над реки са 4x). */
+  /** Строителен множител на цената според терена: мост над река 4x, над езеро/залив 6x; в открито море – не. */
   roadCostMult(x: number, y: number): number {
     if (!this.inCountry(x, y)) return Infinity;
     const t = this.terrain[y * this.size + x] as Terrain;
     if (t === Terrain.River) return 4;
+    if (t === Terrain.Water) return 6;
     const m = BALANCE.construction.terrainCostMult[TERRAIN_NAMES[t]];
     return m ?? Infinity;
   }

@@ -149,8 +149,10 @@ export function terrainSampler(gen: WorldGenerator) {
     return (a * (1 - tx) + b * tx) * (1 - ty) + (cc * (1 - tx) + d * tx) * ty;
   };
   // Маска на водата, размита два пъти (3x3) – бреговата линия става плавна крива, а не стъпала.
+  // Реките влизат в маската плочка по плочка: всичко, което изглежда като вода, е вода и за строителството
+  // (сървърът не позволява сгради върху речни плочки), а сушата до реката изглежда като суша.
   let blur = new Float32Array(N * N);
-  for (let k = 0; k < N * N; k++) blur[k] = c.water[k] === WATER_OCEAN || c.water[k] === WATER_LAKE ? 1 : 0;
+  for (let k = 0; k < N * N; k++) blur[k] = c.water[k] === WATER_OCEAN || c.water[k] === WATER_LAKE || c.water[k] === WATER_RIVER ? 1 : 0;
   for (let pass = 0; pass < 2; pass++) {
     const nb = new Float32Array(N * N);
     for (let y = 0; y < N; y++)
@@ -280,14 +282,9 @@ function paintRivers(g: Ctx, gen: WorldGenerator, x0: number, y0: number, x1: nu
         g.beginPath();
         g.moveTo(a.x, a.y);
         g.lineTo(b.x, b.y);
-        if (pass === 0) {
-          // крайбрежна растителност (по-тъмна, влажна трева)
-          g.lineWidth = w + 1.6;
-          g.strokeStyle = 'rgba(52,96,40,0.28)';
-        } else if (pass === 1) {
-          // бряг: чакъл и пясък
-          g.lineWidth = w + 0.42;
-          g.strokeStyle = rgb(C.bank, 1, 0.92);
+        if (pass <= 1) {
+          // коритото и бреговете вече са нарисувани от маската на водата (плочките-река)
+          continue;
         } else if (pass === 2) {
           // плитка вода до бреговете
           g.lineWidth = w;

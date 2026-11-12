@@ -211,9 +211,43 @@ export async function refreshCompanies() {
   return companies;
 }
 
-export async function refreshAll() {
-  const [world] = await Promise.all([get<WorldInfo>('/world'), refreshMe(), refreshCities(), refreshCompanies()]);
+// ---------------- Игрово време ----------------
+// Един тик = един игрови ден. Часът от денонощието се изчислява от момента на последния тик на сървъра,
+// затова е еднакъв за всички играчи и не се променя при презареждане на страницата.
+let tickBase = { tick: 0, at: Date.now(), interval: 20000 };
+/** Отместване на часовника на сървъра спрямо локалния (ms). */
+let clockOffset = 0;
+
+/** Записва новия тик от сървъра: `at` е началото на игровия ден по часовника на сървъра. */
+export function noteTick(tick: number, at?: string, serverNow?: string) {
+  if (serverNow) clockOffset = Date.parse(serverNow) - Date.now();
+  tickBase = { ...tickBase, tick, at: at ? Date.parse(at) - clockOffset : Date.now() };
+}
+
+/** Колко от текущия игрови ден е минал: 0 – изгрев, 1 – краят на деня. */
+export function dayFraction(): number {
+  const f = (Date.now() - tickBase.at) / tickBase.interval;
+  return Math.min(0.999, Math.max(0, f));
+}
+
+/** Кога е бил последният тик (локално време) и продължителността на деня – за резервното опресняване. */
+export function tickTiming() {
+  return tickBase;
+}
+
+export async function refreshWorld() {
+  const t0 = Date.now();
+  const world = await get<WorldInfo>('/world');
+  const t1 = Date.now();
+  // отместване на часовника на сървъра спрямо локалния (средата на заявката)
+  clockOffset = world.serverTime ? Date.parse(world.serverTime) - (t0 + t1) / 2 : 0;
+  tickBase = { tick: world.tick, at: Date.parse(world.lastTickAt) - clockOffset, interval: world.tickIntervalMs || 20000 };
   setState({ world, tick: world.tick });
+  return world;
+}
+
+export async function refreshAll() {
+  await Promise.all([refreshWorld(), refreshMe(), refreshCities(), refreshCompanies()]);
   await refreshCity();
 }
 

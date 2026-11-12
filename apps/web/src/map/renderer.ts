@@ -7,6 +7,7 @@ import { CityLife, type IssueMarker, type NeedBadge } from './life';
 import { Atmosphere, type DayMode, type Weather } from './atmosphere';
 import type { Season } from './sprites';
 import type { PaintJob, PaintReply } from './paint.worker';
+import { dayFraction } from '../store';
 
 export { TW, TH };
 const PARCEL = BALANCE.world.parcelSize;
@@ -173,6 +174,7 @@ export class IsoRenderer {
     life.setNeeds(this.needs);
     // ден/нощ и време: затъмняване над сградите и колите, светлини отгоре, валежи над всичко
     const atmo = new Atmosphere(gen.size);
+    atmo.clock = dayFraction;
     this.atmo = atmo;
     this.world.addChildAt(atmo.dark, this.world.getChildIndex(life.cars) + 1);
     this.world.addChildAt(atmo.lights, this.world.getChildIndex(atmo.dark) + 1);

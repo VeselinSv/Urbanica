@@ -141,6 +141,8 @@ export interface WorldInfo {
   tick: number;
   tickIntervalMs: number;
   lastTickAt: string;
+  /** Часовникът на сървъра в момента на отговора – клиентът изчислява часа от денонощието спрямо него. */
+  serverTime: string;
   baseRate: number;
   priceIndex: number;
 }

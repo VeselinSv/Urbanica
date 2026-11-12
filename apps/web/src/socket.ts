@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 import { getToken } from './api';
-import { bumpData, getState, refreshCity, refreshMe, setState, toast } from './store';
+import { bumpData, getState, noteTick, refreshCity, refreshMe, refreshWorld, setState, tickTiming, toast } from './store';
 
 export interface ChatMsg {
   id: string;
@@ -28,14 +28,47 @@ function scheduleRefresh() {
   }, 300);
 }
 
+function onTick(tick: number, at?: string, now?: string) {
+  if (tick === getState().tick) return;
+  noteTick(tick, at, now);
+  setState({ tick, world: getState().world ? { ...getState().world!, tick } : null });
+  scheduleRefresh();
+}
+
+/**
+ * Резервно опресняване: ако връзката в реално време мълчи (сървърът спи, мрежата прекъсва, прокси),
+ * питаме сървъра за новия ден сами – парите, датата и градът се обновяват и без презареждане.
+ */
+let fallback: ReturnType<typeof setInterval> | null = null;
+let polling = false;
+function startFallback() {
+  if (fallback) return;
+  fallback = setInterval(async () => {
+    const t = tickTiming();
+    if (polling || document.hidden || Date.now() - t.at < t.interval * 1.5) return;
+    polling = true;
+    try {
+      const prev = getState().tick;
+      const w = await refreshWorld();
+      if (w.tick !== prev) {
+        await Promise.allSettled([refreshCity(), refreshMe()]);
+        bumpData();
+      }
+    } catch {
+      /* мрежова грешка – следващият опит след малко */
+    } finally {
+      polling = false;
+    }
+  }, 4000);
+}
+
 export function connectSocket() {
   socket?.disconnect();
   socket = io({ path: '/socket.io', auth: { token: getToken() }, transports: ['websocket', 'polling'] });
-  socket.on('connect', () => setState({}));
-  socket.on('tick', (d: { tick: number }) => {
-    setState({ tick: d.tick, world: getState().world ? { ...getState().world!, tick: d.tick } : null });
-    scheduleRefresh();
-  });
+  // след (пре)свързване може да сме изпуснали събития – опресняваме всичко
+  socket.on('connect', () => scheduleRefresh());
+  socket.on('tick', (d: { tick: number; at?: string; now?: string }) => onTick(d.tick, d.at, d.now));
+  startFallback();
   socket.on('city', (d: { cityId: string }) => {
     if (d.cityId === getState().activeCityId) scheduleRefresh();
   });
@@ -60,4 +93,6 @@ export function joinChannel(channel: string) {
 export function disconnectSocket() {
   socket?.disconnect();
   socket = null;
+  if (fallback) clearInterval(fallback);
+  fallback = null;
 }

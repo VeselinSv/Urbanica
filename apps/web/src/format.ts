@@ -8,6 +8,13 @@ export function money(cents: number | null | undefined): string {
   return `${v < 0 ? '−' : ''}${s} €`;
 }
 
+/** Точна сума до еврото ("21 279 540 €") – за бюджета и портфейла, за да се вижда всяка промяна. */
+export function moneyExact(cents: number | null | undefined): string {
+  if (cents === null || cents === undefined || Number.isNaN(cents)) return '—';
+  const v = Math.round(cents / 100);
+  return `${v < 0 ? '−' : ''}${Math.abs(v).toLocaleString('bg-BG')} €`;
+}
+
 export const pct = (v: number | null | undefined, d = 1) => (v === null || v === undefined ? '—' : `${(v * 100).toFixed(d)}%`);
 export const num = (v: number | null | undefined) => (v === null || v === undefined ? '—' : Math.round(v).toLocaleString('bg-BG'));
 export const dateLabel = (tick: number) => gameDate(tick).label;

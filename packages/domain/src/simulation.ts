@@ -495,7 +495,7 @@ export async function processTick(prisma: PrismaClient): Promise<TickReport> {
       data: { completedAt: new Date(), durationMs, phases: { ...phases, ...Object.fromEntries(Object.entries(counts).map(([k, v]) => [`n_${k}`, v])) } },
     }),
   ]);
-  await publish(prisma, { type: 'tick', tick: tick + 1 });
+  await publish(prisma, { type: 'tick', tick: tick + 1, at: nextAt.toISOString() });
   return { tick, durationMs, phases, counts };
 }
 

@@ -4,7 +4,7 @@ import type { PrismaClient, Tx } from '@gce/database';
 export const PG_CHANNEL = 'gce_events';
 
 export type BusEvent =
-  | { type: 'tick'; tick: number }
+  | { type: 'tick'; tick: number; at?: string }
   | { type: 'notification'; userId: string; kind: string; message: string }
   | { type: 'city'; cityId: string; ownerId: string }
   | { type: 'market'; instrument: string }

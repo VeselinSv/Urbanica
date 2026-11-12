@@ -226,7 +226,7 @@ export async function build(prisma: PrismaClient, userId: string, cityId: string
             }
             const c = buildCost(gen, x, y, Math.round(BALANCE.construction.roadCost * RC[cls].cost));
             if (!Number.isFinite(c)) {
-              reasons.add('Не може да се строи път върху вода');
+              reasons.add('Мост не може да се построи в открито (дълбоко) море');
               continue;
             }
             tiles[k] = cls === 'street' ? { t: 'road' } : { t: 'road', c: cls };
@@ -422,7 +422,22 @@ interface LastBuild {
   next: Record<string, TileState | null>;
 }
 
-/** „Отмени“: връща плочките от последното строителство и възстановява парите – само ако градът не се е променил след това. */
+/** Колко игрови дни след строителството то може да се отмени. */
+export const UNDO_WINDOW_DAYS = 10;
+
+/**
+ * Същото ли е построеното на плочката (без напредъка на строежа, заетостта и състоянието, които
+ * симулацията променя всеки ден). Зона, в която вече има сграда (ниво 1+), не се отменя.
+ */
+function sameStructure(cur: TileState | null, built: TileState | null): boolean {
+  if (!cur || !built) return cur === built;
+  if (cur.t !== built.t) return false;
+  if (cur.t === 'zone' && built.t === 'zone') return cur.z === built.z && cur.lvl === 0;
+  if (cur.t === 'service' && built.t === 'service') return cur.s === built.s;
+  return JSON.stringify(cur) === JSON.stringify(built);
+}
+
+/** „Отмени“: връща плочките от последното строителство и възстановява парите – само ако построеното още е същото. */
 export async function undoBuild(prisma: PrismaClient, userId: string, cityId: string) {
   return withTx(prisma, async (tx) => {
     const city = await lockCity(tx, cityId);
@@ -430,11 +445,11 @@ export async function undoBuild(prisma: PrismaClient, userId: string, cityId: st
     const lb = city.lastBuild as unknown as LastBuild | null;
     if (!lb) throw bad('Няма какво да се отмени');
     const tick = await currentTick(tx);
-    if (tick - lb.tick > 1) throw bad('Може да се отмени само строителство от последния игрови ден');
+    // един игрови ден е ~20 секунди – оставяме няколко минути за отмяна
+    if (tick - lb.tick > UNDO_WINDOW_DAYS) throw bad(`Може да се отмени само строителство от последните ${UNDO_WINDOW_DAYS} игрови дни`);
     const tiles = { ...(city.tiles as unknown as TileMap) };
     for (const [k, v] of Object.entries(lb.next))
-      if (JSON.stringify(tiles[k] ?? null) !== JSON.stringify(v))
-        throw bad('Градът вече се промени (напр. сградите започнаха да се строят) – отмяната не е възможна');
+      if (!sameStructure(tiles[k] ?? null, v)) throw bad('Градът вече се промени (напр. на мястото вече има сграда) – отмяната не е възможна');
     for (const [k, v] of Object.entries(lb.prev)) {
       if (v) tiles[k] = v;
       else delete tiles[k];

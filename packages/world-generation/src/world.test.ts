@@ -116,6 +116,21 @@ describe('Държава (генератор v2)', () => {
 });
 
 describe('Време и валидиране', () => {
+  it('мостове: над река (4x) и езеро/залив (6x) може, в открито море – не', () => {
+    const w = getWorld('gce-alpha-1');
+    const find = (t: Terrain) => {
+      for (let y = 0; y < w.size; y++) for (let x = 0; x < w.size; x++) if (w.inCountry(x, y) && w.tileAt(x, y).terrain === t) return { x, y };
+      return null;
+    };
+    const river = find(Terrain.River)!;
+    expect(w.roadCostMult(river.x, river.y)).toBe(4);
+    // езера в България може и да няма в този свят – ако има, мостът е 6x
+    const lake = find(Terrain.Water);
+    if (lake) expect(w.roadCostMult(lake.x, lake.y)).toBe(6);
+    const deep = find(Terrain.DeepWater);
+    if (deep) expect(w.roadCostMult(deep.x, deep.y)).toBe(Infinity);
+  });
+
   it('игровият календар', () => {
     expect(gameDate(0)).toMatchObject({ year: 1, month: 1, day: 1 });
     expect(gameDate(359)).toMatchObject({ year: 1, month: 12, day: 30 });

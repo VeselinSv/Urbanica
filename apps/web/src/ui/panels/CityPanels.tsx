@@ -18,7 +18,7 @@ import {
 import { getWorld } from '@gce/world-generation';
 import { patch, post } from '../../api';
 import { bumpData, refreshAll, refreshCity, setState, toast, useStore } from '../../store';
-import { KIND_LABELS, money, num, pct, toCents } from '../../format';
+import { KIND_LABELS, money, moneyExact, num, pct, toCents } from '../../format';
 import { AsyncButton, DemandBar, Field, Meter, Section, Stat, Table, useApi } from '../common';
 import { describeTile } from '../../map/MapView';
 import { REQ_ICON, reqTool, reqToolLabel } from '../needs';
@@ -73,7 +73,7 @@ export function CityPanel() {
         <Stat label="Безработица" value={pct(s.unemploymentRate ?? 0)} tone={(s.unemploymentRate ?? 0) > 0.12 ? 'bad' : 'good'} />
         <Stat label="Удовлетвореност" value={pct(s.happiness ?? 0, 0)} tone={(s.happiness ?? 0) < 0.45 ? 'bad' : undefined} />
         <Stat label="Привлекателност" value={pct(s.attractiveness ?? 0, 0)} />
-        <Stat label="Бюджет" value={money(city.treasury)} tone={(city.treasury ?? 0) < 0 ? 'bad' : undefined} />
+        <Stat label="Бюджет" value={moneyExact(city.treasury)} tone={(city.treasury ?? 0) < 0 ? 'bad' : undefined} />
         <Stat label="Нетно/ден" value={money(s.net ?? 0)} tone={(s.net ?? 0) < 0 ? 'bad' : 'good'} />
         <Stat label="БВП/ден" value={money(s.gdp ?? 0)} />
         <Stat label="Ср. стойност на земята" value={(s.landValueAvg ?? 0).toFixed(2)} />
@@ -222,7 +222,7 @@ export function FinancePanel() {
     <div>
       <h2>Финанси и политики</h2>
       <div className="grid2">
-        <Stat label="Бюджет" value={money(city.treasury)} tone={(city.treasury ?? 0) < 0 ? 'bad' : undefined} />
+        <Stat label="Бюджет" value={moneyExact(city.treasury)} tone={(city.treasury ?? 0) < 0 ? 'bad' : undefined} />
         <Stat label="Нетно/ден" value={money(s.net ?? 0)} tone={(s.net ?? 0) < 0 ? 'bad' : 'good'} />
       </div>
       {city.receivership && <div className="callout bad">Градът е в режим на финансово оздравяване – бюджетът за услуги е ограничен до 50%.</div>}

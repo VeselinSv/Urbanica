@@ -1,7 +1,8 @@
 /**
  * Ден и нощ, време (дъжд, сняг) и светлини.
  *
- *  - Денонощието е визуално: цикъл от 8 минути (ден → залез → нощ → изгрев) или фиксиран ден/нощ.
+ *  - Денонощието следва игровия ден (един тик): изгрев в началото на деня, нощ в края му. Часът идва от
+ *    сървъра, затова всички играчи виждат едно и също и презареждането не го променя. Може и фиксиран ден/нощ.
  *  - Нощем целият свят се затъмнява (слой с „умножение“), а отгоре светят адитивно: уличните лампи,
  *    прозорците на сградите, фаровете и стоповете на колите, градовете при далечен изглед.
  *  - Времето (дъжд/сняг) зависи от сезона и игровия ден – еднакво за всички играчи.
@@ -81,6 +82,8 @@ export class Atmosphere {
   private drops: { g: Graphics; x: number; y: number; v: number; s: number }[] = [];
   private flash = 0;
   time = CYCLE * 0.3;
+  /** Часът от игровия ден (0..1, 0 – изгрев); без него – локален цикъл. */
+  clock: (() => number) | null = null;
   mode: DayMode = 'auto';
   weather: Weather = 'clear';
   /** 0 – ден, 1 – пълна нощ (за колите и сградите). */
@@ -147,26 +150,29 @@ export class Atmosphere {
     }
   }
 
+  private phase(): number {
+    return this.clock ? this.clock() : (this.time % CYCLE) / CYCLE;
+  }
+
   private darkness() {
     if (this.mode === 'day') return 0;
     if (this.mode === 'night') return 1;
-    const f = (this.time % CYCLE) / CYCLE; // 0 – изгрев
-    // ден 0.05..0.55, залез 0.55..0.65, нощ 0.65..0.95, изгрев 0.95..1.05
-    if (f < 0.05) return 0.5 - f * 10;
-    if (f < 0.55) return 0;
-    if (f < 0.65) return (f - 0.55) * 10;
-    if (f < 0.95) return 1;
-    return 1 - (f - 0.95) * 10;
+    const f = this.phase(); // 0 – изгрев
+    // изгрев 0..0.08, ден 0.08..0.62, залез 0.62..0.74, нощ 0.74..1
+    if (f < 0.08) return 1 - f / 0.08;
+    if (f < 0.62) return 0;
+    if (f < 0.74) return (f - 0.62) / 0.12;
+    return 1;
   }
 
   /** Име на частта от денонощието – за индикатора в интерфейса. */
   phaseLabel(): string {
     const d = this.darkness();
     if (this.mode !== 'auto') return this.mode === 'day' ? 'Ден' : 'Нощ';
-    const f = (this.time % CYCLE) / CYCLE;
+    const f = this.phase();
     if (d <= 0.01) return 'Ден';
     if (d >= 0.99) return 'Нощ';
-    return f < 0.5 || f > 0.9 ? 'Изгрев' : 'Залез';
+    return f < 0.5 ? 'Изгрев' : 'Залез';
   }
 
   update(dt: number, scale: number, screenW: number, screenH: number) {

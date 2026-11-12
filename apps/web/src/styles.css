@@ -439,6 +439,8 @@ h3 {
   left: 78px;
   top: -6px;
   z-index: 40;
+  /* плътен фон – под менюто не прозират сигналите и картата */
+  background: rgba(11, 18, 34, 0.97);
   width: 340px;
   max-height: 72vh;
   overflow-y: auto;
@@ -580,6 +582,14 @@ h3 {
 }
 .voice.collapsed {
   max-height: none;
+  width: auto;
+  min-width: 220px;
+}
+.voice-chev {
+  font-style: normal;
+  display: inline-block;
+  width: 12px;
+  color: var(--muted);
 }
 .voice-calm {
   margin: 4px 6px;

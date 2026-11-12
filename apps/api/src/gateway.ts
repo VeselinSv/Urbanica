@@ -31,7 +31,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   private async listen() {
     if (this.stopped) return;
     try {
-      const pg = new PgClient({ connectionString: process.env.DATABASE_URL });
+      // LISTEN изисква директна връзка: през pooler-а (Neon/PgBouncer в transaction mode) известията не пристигат.
+      const pg = new PgClient({ connectionString: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL });
       pg.on('error', (e) => {
         this.log.warn(`pg listener error: ${e.message}; reconnecting`);
         this.pg = null;
@@ -59,7 +60,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     if (!this.server) return;
     switch (ev.type) {
       case 'tick':
-        this.server.to('world').emit('tick', { tick: ev.tick });
+        this.server.to('world').emit('tick', { tick: ev.tick, at: ev.at, now: new Date().toISOString() });
         break;
       case 'notification':
         this.server.to(`user:${ev.userId}`).emit('notification', ev);
