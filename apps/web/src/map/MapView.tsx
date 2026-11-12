@@ -752,6 +752,17 @@ function HoverCard({ tile, info, x, y }: { tile: TileMap[string]; info?: { next:
 function Minimap({ renderer }: { renderer: React.RefObject<IsoRenderer | null> }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const world = useStore((s) => s.world);
+  const me = useStore((s) => s.me);
+  // създадените от играчите градове (всички) – обновяват се при всяко отваряне на списъка
+  const [played, setPlayed] = useState<{ id: string; name: string; ownerId: string; ownerName: string; originX: number; originY: number; population: number }[]>([]);
+  const loadPlayed = () => {
+    get<typeof played>('/cities')
+      .then(setPlayed)
+      .catch(() => {});
+  };
+  useEffect(loadPlayed, []);
+  const mine = played.filter((c) => c.ownerId === me?.user.id);
+  const others = played.filter((c) => c.ownerId !== me?.user.id).sort((a, b) => a.name.localeCompare(b.name, 'bg'));
   const W = 220;
   const H = 110;
   useEffect(() => {
@@ -799,7 +810,16 @@ function Minimap({ renderer }: { renderer: React.RefObject<IsoRenderer | null> }
     const rr = renderer.current;
     if (!rr || !gen || !value) return;
     const [kind, id] = value.split(':');
-    if (kind === 'r') {
+    if (kind === 'c') {
+      const c = played.find((x) => x.id === id);
+      if (!c) return;
+      rr.centerOn(c.originX, c.originY, 0.7, true);
+      // собствен град – става и активен (панелът и строенето са за него)
+      if (c.ownerId === me?.user.id && getState().activeCityId !== c.id) {
+        setState({ activeCityId: c.id });
+        void refreshCity();
+      }
+    } else if (kind === 'r') {
       const rg = gen.regions[Number(id)];
       rr.centerOn(Math.round(rg.cx), Math.round(rg.cy), 0.3, true);
     } else {
@@ -809,9 +829,27 @@ function Minimap({ renderer }: { renderer: React.RefObject<IsoRenderer | null> }
   };
   return (
     <div className="minimap glass">
-      <select aria-label="Отиди до област или град" value="" onChange={(e) => goto(e.target.value)}>
+      <select aria-label="Отиди до област или град" value="" onFocus={loadPlayed} onMouseDown={loadPlayed} onChange={(e) => goto(e.target.value)}>
         <option value="">📍 Отиди до…</option>
-        <optgroup label="Градове">
+        {mine.length > 0 && (
+          <optgroup label="Моите градове">
+            {mine.map((c) => (
+              <option key={c.id} value={`c:${c.id}`}>
+                🏙 {c.name} · {c.population.toLocaleString('bg-BG')} жители
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {others.length > 0 && (
+          <optgroup label="Градове на играчите">
+            {others.map((c) => (
+              <option key={c.id} value={`c:${c.id}`}>
+                {c.name} ({c.ownerName}) · {c.population.toLocaleString('bg-BG')} жители
+              </option>
+            ))}
+          </optgroup>
+        )}
+        <optgroup label="Населени места на картата">
           {REAL_PLACES.map((p, i) => (
             <option key={p.name} value={`p:${i}`}>
               {p.name}
