@@ -54,6 +54,8 @@ export class City3D {
   readonly group = new THREE.Group();
   private blocks = new Map<string, { sig: string; obj: THREE.Group }>();
   private tiles: TileMap = {};
+  /** Височина на площадката по плочка (за сигнали върху парцели). */
+  private lotTop = new Map<string, number>();
   season = 'summer';
   zoning = false;
 
@@ -112,6 +114,18 @@ export class City3D {
         s += ';';
       }
     return s;
+  }
+
+  /** Повърхността в плочката: платното на пътя, площадката на парцела или терена. */
+  surfaceY(x: number, y: number, px: number, pz: number): number {
+    const t = this.lookup(x, y);
+    if (t?.t === 'road') return this.isBridge(x, y) ? this.deck(x, y) : this.terrain.heightAt(px, pz) + 0.035;
+    return this.lotTop.get(`${x},${y}`) ?? this.terrain.heightAt(px, pz);
+  }
+
+  /** Посоката на улицата в плочката: true – по X, false – по Z. */
+  roadAlongX(x: number, y: number): boolean {
+    return this.lookup(x - 1, y)?.t === 'road' || this.lookup(x + 1, y)?.t === 'road';
   }
 
   isBridge(x: number, y: number) {
@@ -428,6 +442,7 @@ export class City3D {
     } else if (t.t === 'service') top = t.s === 'park' ? (winter ? 0xe9eef1 : 0x6f9f45) : t.s === 'parking' ? 0x44474b : 0xb8b2a6;
     else top = 0x9c9a94;
     // тераса: равна площадка (на склон – с подпорна стена)
+    this.lotTop.set(`${x},${y}`, hi + 0.03);
     // отгоре – площадката; отстрани – каменна подпорна стена
     const stone = plain(0x8d877c, 1);
     const topM = plain(top, 0.95);

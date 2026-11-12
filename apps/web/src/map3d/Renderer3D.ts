@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { BALANCE, ISSUE_TYPES, type TileMap } from '@gce/shared';
 import type { WorldGenerator } from '@gce/world-generation';
 import { dayFraction } from '../store';
-import { decalCanvas } from '../map/decals';
+import { issueObject } from './issues3d';
 import type { CityRender, LayerData } from '../map/renderer';
 import type { IssueMarker, NeedBadge } from '../map/life';
 import type { DayMode, Weather } from '../map/atmosphere';
@@ -97,7 +97,7 @@ export class Renderer3D {
 
   async init(el: HTMLElement) {
     this.host = el;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -558,8 +558,12 @@ export class Renderer3D {
 
   // ------------------------------------------------------------------ сигнали и значки
   setIssues(issues: IssueMarker[]) {
-    for (const c of [...this.markers.children.filter((m) => m.userData.issue), ...this.decals.children]) {
-      ((c as THREE.Mesh).material as THREE.Material).dispose();
+    for (const c of this.markers.children.filter((m) => m.userData.issue)) {
+      ((c as THREE.Sprite).material as THREE.SpriteMaterial).map?.dispose();
+      c.removeFromParent();
+    }
+    for (const c of [...this.decals.children]) {
+      c.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
       c.removeFromParent();
     }
     this.issueSprites = [];
@@ -567,22 +571,23 @@ export class Renderer3D {
     for (const i of issues) {
       const x = i.x + 0.5;
       const z = i.y + 0.5;
-      const y = this.roadY(x, z);
-      // следа (дупка, теч, боклук…) – лежи върху настилката
-      const cv = decalCanvas(i.kind, i.severity, i.x * 7 + i.y * 13, false);
-      if (cv) {
-        const t = new THREE.CanvasTexture(cv);
-        t.colorSpace = THREE.SRGBColorSpace;
-        const d = new THREE.Mesh(
-          new THREE.PlaneGeometry(1.0, 0.6),
-          new THREE.MeshStandardMaterial({ map: t, transparent: true, depthWrite: false, roughness: 0.6 }),
-        );
-        d.rotation.x = -Math.PI / 2;
-        d.rotation.z = Math.PI / 4;
-        d.position.set(x, y + 0.006, z);
-        d.renderOrder = 2;
-        this.decals.add(d);
-      }
+      // истински 3D обект на сигнала (дупка в асфалта, шахта с вода, контейнер, коли, дърво…)
+      const seed = i.x * 7 + i.y * 13;
+      const ox = x + (i.kind === 'pothole' ? 0.08 : 0);
+      const surf = this.city ? this.city.surfaceY(i.x, i.y, ox, z) : this.roadY(ox, z);
+      const obj = issueObject(i.kind, i.severity, seed, i.status === 'FIXING', this.season);
+      obj.position.set(ox, surf + 0.016, z);
+      // наклон по настилката (на склон дупката и локвите лежат успоредно на асфалта)
+      const sy = (px: number, pz: number) => (this.city ? this.city.surfaceY(Math.floor(px), Math.floor(pz), px, pz) : this.roadY(px, pz));
+      const e = 0.15;
+      const nrm = new THREE.Vector3(-(sy(ox + e, z) - sy(ox - e, z)) / (2 * e), 1, -(sy(ox, z + e) - sy(ox, z - e)) / (2 * e)).normalize();
+      const tilt = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), nrm);
+      // лампата е на тротоара – по посоката на улицата; останалите – завъртяни произволно
+      const ang = i.kind === 'streetlight' ? (this.city?.roadAlongX(i.x, i.y) ? 0 : Math.PI / 2) : ((seed % 8) / 8) * Math.PI * 2;
+      const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ang);
+      obj.quaternion.copy(tilt.multiply(yaw));
+      const y = surf;
+      this.decals.add(obj);
       const fixing = i.status === 'FIXING';
       const sp = new THREE.Sprite(
         new THREE.SpriteMaterial({
