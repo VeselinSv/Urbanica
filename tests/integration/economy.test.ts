@@ -18,7 +18,7 @@ import {
   SYS,
   transfer,
 } from '@gce/domain';
-import { BALANCE } from '@gce/shared';
+import { BALANCE, PRICE } from '@gce/shared';
 import { withTx } from '@gce/database';
 import { balance, cityWithRoad, companyIn, expectInvariants, giveGoods, player, prisma, resetDb } from './helpers';
 
@@ -44,15 +44,22 @@ describe('Търговия между двама играчи', () => {
     await giveGoods(sellerCo, sellerCity, 'steel', 100);
     const sellerCash0 = await balance(acc.company(sellerCo));
     const buyerCash0 = await balance(acc.company(buyerCo));
-    await placeOrder(prisma, seller.id, { instrument: 'GOOD:steel', side: 'SELL', quantity: 40, price: 3000, companyId: sellerCo, cityId: sellerCity });
+    await placeOrder(prisma, seller.id, { instrument: 'GOOD:steel', side: 'SELL', quantity: 40, price: 3000 * PRICE, companyId: sellerCo, cityId: sellerCity });
     const inv = await prisma.inventory.findUniqueOrThrow({ where: { companyId_cityId_good: { companyId: sellerCo, cityId: sellerCity, good: 'steel' } } });
     expect(inv.quantity).toBe(60);
     expect(inv.reserved).toBe(40);
-    const r = await placeOrder(prisma, buyer.id, { instrument: 'GOOD:steel', side: 'BUY', quantity: 30, price: 3200, companyId: buyerCo, cityId: buyerCity });
-    expect(r.fills).toEqual([{ price: 3000, quantity: 30 }]);
+    const r = await placeOrder(prisma, buyer.id, {
+      instrument: 'GOOD:steel',
+      side: 'BUY',
+      quantity: 30,
+      price: 3200 * PRICE,
+      companyId: buyerCo,
+      cityId: buyerCity,
+    });
+    expect(r.fills).toEqual([{ price: 3000 * PRICE, quantity: 30 }]);
     // Купувачът плаща цената на продавача (3000), излишъкът от ескроу се връща.
-    expect(buyerCash0 - (await balance(acc.company(buyerCo)))).toBe(30 * 3000);
-    const gross = 30 * 3000;
+    expect(buyerCash0 - (await balance(acc.company(buyerCo)))).toBe(30 * 3000 * PRICE);
+    const gross = 30 * 3000 * PRICE;
     const fee = Math.floor(gross * BALANCE.market.tradeFee);
     const gained = (await balance(acc.company(sellerCo))) - sellerCash0;
     expect(gained).toBeLessThanOrEqual(gross - fee);

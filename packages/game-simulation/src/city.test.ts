@@ -149,33 +149,29 @@ describe('Градска симулация', () => {
     expect(j.expenses.road_upkeep).toBe(plain.expenses.road_upkeep + BALANCE.construction.junctions.roundabout.upkeep);
   });
 
-  it('сградите се надграждат сами само при изпълнени условия (болница, полиция, училище…)', () => {
-    // Без болница и полиция жилищните сгради остават на ниво 1 и сървърът казва какво липсва.
-    const bare = run(makeCity(), 120);
-    const lv = (tiles: TileMap, z: string) => Object.values(tiles).filter((t) => t.t === 'zone' && t.z === z && t.lvl >= 2).length;
-    expect(bare.last.stats.buildings.R).toBeGreaterThan(5);
-    expect(lv(bare.last.tiles, 'R')).toBe(0);
-    expect(bare.last.stats.upgradeBlockers?.clinic ?? 0).toBeGreaterThan(0);
-    expect(bare.last.stats.upgradeBlockers?.police_station ?? 0).toBeGreaterThan(0);
-    const someR = Object.entries(bare.last.tiles).find(([, t]) => t.t === 'zone' && t.z === 'R' && t.lvl === 1)![0];
-    expect(bare.last.derived.levels?.[someR].next).toEqual(expect.arrayContaining(['clinic', 'police_station']));
+  it('сградите се надграждат сами само при изпълнени условия (училище, тротоар; болница, полиция за ниво 3)', () => {
+    // С училище и улици с тротоари жилищата стигат ниво 2, но не и ниво 3 (липсват болница, полиция…).
+    const lv = (tiles: TileMap, z: string, n: number) => Object.values(tiles).filter((t) => t.t === 'zone' && t.z === z && t.lvl >= n).length;
+    const city = makeCity();
+    // балансиран град: още работни места и второ училище, което покрива западните жилища
+    const keys = Object.keys(city.tiles).map((k) => k.split(',').map(Number));
+    const ox = Math.min(...keys.map((p) => p[0]));
+    const oy = Math.min(...keys.map((p) => p[1])) - 5;
+    for (let i = 0; i < 20; i++) city.tiles[tileKey(ox + i, oy + 13)] = { t: 'zone', z: 'I', lvl: 0, occ: 0, prog: 0, hp: 1 };
+    city.tiles[tileKey(ox + 3, oy + 8)] = { t: 'service', s: 'school', cond: 1 };
+    const base = run(city, 300);
+    expect(base.last.stats.buildings.R).toBeGreaterThan(5);
+    expect(lv(base.last.tiles, 'R', 2)).toBeGreaterThan(0);
+    expect(lv(base.last.tiles, 'R', 3)).toBe(0);
+    const someR2 = Object.entries(base.last.tiles).find(([, t]) => t.t === 'zone' && t.z === 'R' && t.lvl === 2)![0];
+    expect(base.last.derived.levels?.[someR2].next).toEqual(expect.arrayContaining(['clinic', 'police_station']));
 
-    // Строим болница и полиция в обхват → сградите започват да се надграждат.
-    const withSvc = { ...bare.cur, tiles: { ...bare.cur.tiles } };
-    const base = Object.keys(withSvc.tiles).map((k) => k.split(',').map(Number));
-    const minX = Math.min(...base.map((p) => p[0]));
-    const minY = Math.min(...base.map((p) => p[1]));
-    withSvc.tiles[tileKey(minX + 5, minY + 3)] = { t: 'service', s: 'clinic', cond: 1 };
-    withSvc.tiles[tileKey(minX + 14, minY + 3)] = { t: 'service', s: 'police_station', cond: 1 };
-    const upgraded = run(withSvc, 120);
-    expect(lv(upgraded.last.tiles, 'R')).toBeGreaterThan(0);
-
-    // Затваряме болницата → надградените сгради губят състояние и слизат ниво (не се изоставят веднага).
-    const closed = { ...upgraded.cur, tiles: { ...upgraded.cur.tiles } };
-    delete closed.tiles[tileKey(minX + 5, minY + 3)];
-    const before = lv(closed.tiles, 'R');
-    const after = run(closed, 60);
-    expect(lv(after.last.tiles, 'R')).toBeLessThan(before);
+    // Затваряме училището → надградените жилища губят състояние и слизат ниво (не се изоставят веднага).
+    const closed = { ...base.cur, tiles: { ...base.cur.tiles } };
+    for (const [k, t] of Object.entries(closed.tiles)) if (t.t === 'service' && t.s === 'school') delete closed.tiles[k];
+    const before = lv(closed.tiles, 'R', 2);
+    const after = run(closed, 90);
+    expect(lv(after.last.tiles, 'R', 2)).toBeLessThan(before);
   });
 
   it('тротоари: улиците ги имат по подразбиране, селските пътища – не; алеята е пешеходна', () => {

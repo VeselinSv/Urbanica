@@ -1,4 +1,4 @@
-import { BALANCE, FACILITIES, tileKey, type FacilityType, type ServiceType, type ZoneType } from '@gce/shared';
+import { BALANCE, FACILITIES, tileKey, type FacilityType, type ServiceType, type ZoneType, ECON } from '@gce/shared';
 import type { PrismaClient } from '@gce/database';
 import { build, buildFacility, foundCity, foundCompany, getCity, register, worldGen } from '@gce/domain';
 
@@ -34,8 +34,8 @@ export async function createBot(prisma: PrismaClient, name: string, opts: { comp
   await build(prisma, reg.user.id, city.id, { action: 'road', tiles: road });
   const taken = new Set(road.map((r) => tileKey(r.x, r.y)));
   const free = (x: number, y: number) => land(x, y) && !taken.has(tileKey(ox + x, oy + y));
-  // Обществени услуги на ред 1.
-  const services: ServiceType[] = ['power_coal', 'water_pump', 'school', 'clinic', 'sewage_plant', 'landfill', 'fire_station', 'police_station'];
+  // Обществени услуги на ред 1 – по реалните цени стартовият бюджет стига за ток от вятър, вода и основни услуги.
+  const services: ServiceType[] = ['power_wind', 'power_wind', 'water_pump', 'school', 'fire_station', 'police_station'];
   let sx = 0;
   for (const svc of services) {
     while (sx < size && !free(sx, 1)) sx++;
@@ -59,12 +59,15 @@ export async function createBot(prisma: PrismaClient, name: string, opts: { comp
     for (const y of rows) for (let x = 0; x < size; x++) if (free(x, y)) tiles.push({ x: ox + x, y: oy + y });
     for (const t of tiles) taken.add(tileKey(t.x, t.y));
     // Оставяме по няколко плочки свободни за предприятия.
-    if (tiles.length) await build(prisma, reg.user.id, city.id, { action: 'zone', zone: z, tiles: tiles.slice(0, Math.max(1, tiles.length - 4)) });
+    if (tiles.length)
+      await build(prisma, reg.user.id, city.id, { action: 'zone', zone: z, tiles: tiles.slice(0, Math.max(1, tiles.length - 4)) }).catch((e: Error) =>
+        console.warn(`[bot ${name}] zone ${z}: ${e.message}`),
+      );
     for (const t of tiles.slice(Math.max(1, tiles.length - 4))) taken.delete(tileKey(t.x, t.y));
   }
   const bot: Bot = { userId: reg.user.id, token: reg.token, username: name, cityId: city.id, companyId: null, facilities: [] };
   if (opts.company === false) return bot;
-  const company = await foundCompany(prisma, reg.user.id, { name: `${name} Индъстрис`, hqCityId: city.id, capital: 4_000_000 });
+  const company = await foundCompany(prisma, reg.user.id, { name: `${name} Индъстрис`, hqCityId: city.id, capital: 4_000_000 * ECON });
   bot.companyId = company.id;
   for (const type of opts.facilities ?? []) {
     const def = FACILITIES[type];

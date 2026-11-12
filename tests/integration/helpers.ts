@@ -1,6 +1,6 @@
 import { getPrisma } from '@gce/database';
 import { addGoods, build, ensureWorld, foundCity, foundCompany, getCity, register, worldGen } from '@gce/domain';
-import { BALANCE, tileKey } from '@gce/shared';
+import { BALANCE, ECON, tileKey } from '@gce/shared';
 import { withTx } from '@gce/database';
 import { checkInvariants } from '../../apps/worker/src/invariants';
 
@@ -79,7 +79,7 @@ export async function cityWithRoad(userId: string) {
   return { city, ox, oy, free, road, key: (x: number, y: number) => tileKey(x, y) };
 }
 
-export async function companyIn(userId: string, cityId: string, capital = 2_000_000) {
+export async function companyIn(userId: string, cityId: string, capital = 2_000_000 * ECON) {
   return foundCompany(prisma, userId, { name: `Co_${userId.slice(-5)}_${Math.random().toString(36).slice(2, 5)}`, hqCityId: cityId, capital });
 }
 

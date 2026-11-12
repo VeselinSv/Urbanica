@@ -1,3 +1,5 @@
+import { ECON, POP, PRICE, eur } from './scale';
+
 /**
  * Балансови параметри на икономиката. Всички важни константи са тук, а не разпръснати в кода.
  * Паричните стойности са в центове. "Ден" = един игрови тик.
@@ -11,28 +13,28 @@ export const BALANCE = {
     maxCityParcels: 64,
   },
   start: {
-    cityTreasury: 20_000_000, // 200 000 €
-    wallet: 5_000_000, // 50 000 €
-    additionalCityCost: 10_000_000, // основаване на втори град (плаща се от портфейла)
+    cityTreasury: eur(50_000_000), // бюджет на нов град
+    wallet: eur(2_000_000), // личен капитал на кмета (за компании)
+    additionalCityCost: eur(25_000_000), // основаване на втори град (плаща се от портфейла)
     minDistanceBetweenCities: 24, // плочки
   },
   land: {
-    parcelBasePrice: 500_000,
+    parcelBasePrice: eur(1_200_000),
     /** Множител на цената за всеки парцел, който градът вече притежава (растяща цена на експанзията). */
     parcelGrowthFactor: 0.04,
     resourcePremium: 0.5,
   },
   construction: {
-    roadCost: 2_000,
-    bulldozeCost: 200,
+    roadCost: eur(40_000), // улица за плочка (квартален блок): настилка, бордюри, осветление, мрежи
+    bulldozeCost: eur(3_000),
     terrainCostMult: { plains: 1, forest: 1.3, hills: 1.6, mountains: 3, beach: 1.2, water: Infinity, deep_water: Infinity } as Record<string, number>,
-    roadUpkeep: 20,
+    roadUpkeep: eur(4),
     /** Тротоари към съществуващ път (за плочка) и пешеходна алея (за плочка). */
-    sidewalkCost: 800,
+    sidewalkCost: eur(8_000),
     /** Автобусна спирка (навес и табела) и обхватът ѝ при наличие на автобусно депо. */
-    busStopCost: 3_000,
+    busStopCost: eur(15_000),
     busStopRadius: 4,
-    pathCost: 1_000,
+    pathCost: eur(12_000),
     /** Категории пътища: множител на цената, капацитет (спрямо улица) и поддръжка. */
     roadClasses: {
       street: { cost: 1, capacity: 1, upkeep: 1 },
@@ -43,14 +45,14 @@ export const BALANCE = {
     } as Record<string, { cost: number; capacity: number; upkeep: number }>,
     /** Управление на кръстовища: еднократна цена и допълнителен капацитет (пътувания). */
     junctions: {
-      roundabout: { cost: 40_000, capacity: 260, upkeep: 30 },
-      signals: { cost: 15_000, capacity: 150, upkeep: 15 },
+      roundabout: { cost: eur(300_000), capacity: 260 * POP, upkeep: eur(15) },
+      signals: { cost: eur(90_000), capacity: 150 * POP, upkeep: eur(8) },
     } as Record<string, { cost: number; capacity: number; upkeep: number }>,
   },
   population: {
     workforceShare: 0.6,
     maxDailyGrowthShare: 0.06, // максимум 6% от свободния жилищен капацитет на ден
-    minDailyMigrants: 4,
+    minDailyMigrants: 4 * POP,
     emigrationShare: 0.03,
     initialEduMix: [0.7, 0.25, 0.05] as [number, number, number],
     schoolDays: 60, // нужни учебни дни за L0 -> L1
@@ -59,9 +61,10 @@ export const BALANCE = {
     unemployedExodus: 0.02,
   },
   wages: {
-    base: [1_000, 1_600, 2_800] as [number, number, number], // центове/ден за L0, L1, L2
-    min: [600, 900, 1_500] as [number, number, number],
-    max: [3_000, 5_000, 9_000] as [number, number, number],
+    // ≈ реалните заплати в България: 45 / 72 / 126 € на ден за L0, L1, L2
+    base: [1_000 * PRICE, 1_600 * PRICE, 2_800 * PRICE] as [number, number, number],
+    min: [600 * PRICE, 900 * PRICE, 1_500 * PRICE] as [number, number, number],
+    max: [3_000 * PRICE, 5_000 * PRICE, 9_000 * PRICE] as [number, number, number],
     adjustSpeed: 0.03,
   },
   consumption: {
@@ -71,17 +74,17 @@ export const BALANCE = {
     rentYield: 0.06,
   },
   taxes: {
-    defaults: { income: 0.12, property: 0.02, corporate: 0.15, sales: 0.02, resource: 0.05, pollution: 50 },
-    limits: { income: [0, 0.4], property: [0, 0.1], corporate: [0, 0.5], sales: [0, 0.2], resource: [0, 0.3], pollution: [0, 1000] },
+    defaults: { income: 0.12, property: 0.02, corporate: 0.15, sales: 0.02, resource: 0.05, pollution: 50 * ECON },
+    limits: { income: [0, 0.4], property: [0, 0.1], corporate: [0, 0.5], sales: [0, 0.2], resource: [0, 0.3], pollution: [0, 1000 * ECON] },
     /** Еластичност на търсенето спрямо данъка (отклонение от стойността по подразбиране). */
     demandElasticity: { income: 2.5, property: 4, corporate: 1.6 },
   },
   utilities: {
-    defaultPowerTariff: 200, // центове за единица енергия
-    defaultWaterTariff: 50,
-    tariffLimits: { power: [0, 2_000], water: [0, 500] },
+    defaultPowerTariff: 200 * PRICE, // центове за единица енергия
+    defaultWaterTariff: 50 * PRICE,
+    tariffLimits: { power: [0, 2_000 * PRICE], water: [0, 500 * PRICE] },
     /** Изкупна цена на енергия от частни централи: базова, коригирана от недостига. */
-    energyBuyBase: 160,
+    energyBuyBase: 160 * PRICE,
     energyScarcityElasticity: 1.2,
     sewagePerResident: 0.1,
     sewagePerJob: 0.05,
@@ -89,28 +92,33 @@ export const BALANCE = {
     wastePerJob: 0.06,
   },
   landValue: {
-    base: 1_000_000, // базова стойност на плочка (центове) = 10 000 €
+    base: 1_000_000 * ECON, // базова стойност на плочка (квартален блок) = 450 000 €
   },
   /** Самостоятелно надграждане на сградите (условията по зони са в UPGRADE_REQUIREMENTS). */
   upgrade: {
     coverageMin: 0.25, // минимално покритие от обществена сграда, за да се счита „в обхват“
     maxPollution: 4, // „чист въздух“
-    minOccupancy: 0.8,
+    minOccupancy: 0.7,
     waterRatioMin: 0.9, // водата се счита за осигурена при ≥90% покрито търсене
-    chanceBase: 0.05, // дневен шанс за надграждане при изпълнени условия
+    chanceBase: 0.08, // дневен шанс за надграждане при изпълнени условия
     chancePerDemand: 0.12,
-    declinePerDay: 0.02, // загуба на състояние, ако изискванията на текущото ниво не са изпълнени
-    downgradeBelowHp: 0.4, // под това състояние сградата слиза едно ниво (вместо да се изостави)
+    declinePerDay: 0.01, // загуба на състояние, ако изискванията на текущото ниво не са изпълнени
+    downgradeBelowHp: 0.3, // под това състояние сградата слиза едно ниво (вместо да се изостави)
   },
   /** Магистрали между градовете. */
   links: {
-    costPerTile: 15_000, // 150 € за плочка разстояние
+    costPerTile: eur(150_000), // 150 000 € за плочка разстояние (регионален път)
     maxLength: 160,
     /** Множител на цената и времето за превоз между свързани градове. */
     shippingMult: 0.5,
   },
+  /** Приходи на града извън данъците. */
+  city: {
+    /** Държавна субсидия за делегирани дейности (училища, здраве, социални) – на жител на ден. */
+    stateTransferPerResident: eur(1.5),
+  },
   traffic: {
-    roadCapacity: 120, // пътувания на пътна плочка
+    roadCapacity: 120 * POP, // пътувания на пътна плочка
     busShare: 0.35, // дял пътувания, поети от автобуси в обхват
   },
   pollution: {
@@ -119,13 +127,13 @@ export const BALANCE = {
     healthImpact: 0.004,
   },
   company: {
-    baseStorage: 1_000,
-    minFoundingCapital: 1_000_000,
+    baseStorage: 1_000 * POP,
+    minFoundingCapital: 1_000_000 * ECON,
     defaultShares: 10_000,
-    shippingCostPerUnitPerTile: 1, // центове за единица стока на плочка разстояние
+    shippingCostPerUnitPerTile: PRICE, // центове за единица стока на плочка разстояние
     shippingBaseDays: 1,
     tilesPerShippingDay: 60,
-    machineryUpgradeUnits: 5,
+    machineryUpgradeUnits: 5 * POP,
     machineryUpgradeBonus: 0.25,
     maxUpgrades: 2,
     facilityResaleShare: 0.3,
@@ -140,7 +148,7 @@ export const BALANCE = {
     meanReversion: 0.01,
     minPriceShare: 0.2,
     maxPriceShare: 6,
-    orderMaxQty: 1_000_000,
+    orderMaxQty: 1_000_000 * POP,
   },
   banking: {
     neutralRate: 0.05, // годишна
@@ -152,12 +160,12 @@ export const BALANCE = {
     paymentIntervalDays: 30,
     maxMissedBeforeDefault: 3,
     latePenaltyShare: 0.05,
-    bankInitialCapital: 50_000_000_000,
+    bankInitialCapital: 50_000_000_000 * ECON,
     /** Спред по кредитен рейтинг (годишен). */
     spreads: { AAA: 0.005, AA: 0.01, A: 0.02, BBB: 0.035, BB: 0.06, B: 0.09, CCC: 0.14, D: 1 } as Record<string, number>,
     /** Максимален дълг като дял от активите по рейтинг. */
     maxLeverage: { AAA: 0.8, AA: 0.7, A: 0.6, BBB: 0.5, BB: 0.35, B: 0.2, CCC: 0.05, D: 0 } as Record<string, number>,
-    cityBorrowingAssetsPerResident: 30_000,
+    cityBorrowingAssetsPerResident: 30_000 * PRICE,
     recoveryShare: 0.6,
   },
   research: {

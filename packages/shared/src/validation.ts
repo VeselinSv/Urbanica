@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ECON } from './scale';
 import { FACILITY_TYPES, GOOD_IDS, SERVICE_TYPES, TECH_IDS, ZONE_TYPES } from './catalog';
 import { BALANCE } from './balance';
 import { JUNCTION_TYPES, ROAD_CLASSES } from './types';
@@ -65,7 +66,16 @@ export const PolicySchema = z.object({
     .partial()
     .optional(),
   serviceBudget: z.number().min(0.5).max(1.5).optional(),
-  subsidies: z.partialRecord(z.enum(ZONE_TYPES), z.number().int().min(0).max(5_000)).optional(),
+  subsidies: z
+    .partialRecord(
+      z.enum(ZONE_TYPES),
+      z
+        .number()
+        .int()
+        .min(0)
+        .max(5_000 * ECON),
+    )
+    .optional(),
   powerTariff: z.number().int().min(BALANCE.utilities.tariffLimits.power[0]).max(BALANCE.utilities.tariffLimits.power[1]).optional(),
   waterTariff: z.number().int().min(BALANCE.utilities.tariffLimits.water[0]).max(BALANCE.utilities.tariffLimits.water[1]).optional(),
   importTariff: z.number().min(0).max(0.5).optional(),

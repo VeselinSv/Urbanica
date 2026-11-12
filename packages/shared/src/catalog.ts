@@ -1,3 +1,5 @@
+import { ECON, POP, PRICE, eur } from './scale';
+
 /**
  * Игрови каталог: стоки, зони, обществени сгради, предприятия (съоръжения) и технологии.
  * Всички стойности са данни – могат да се разширяват, без да се променя кодът на симулацията.
@@ -108,7 +110,7 @@ export const ZONES: Record<ZoneType, ZoneDef> = {
     water: [1, 3, 8],
     pollution: [0, 0, 0],
     buildDays: 3,
-    landValueReq: [0, 0.9, 1.3],
+    landValueReq: [0, 0.72, 1.1],
     zoningCost: 500,
     needsUtilities: true,
     valueAddedPerJob: 0,
@@ -123,7 +125,7 @@ export const ZONES: Record<ZoneType, ZoneDef> = {
     water: [1, 3, 6],
     pollution: [0, 0.5, 1],
     buildDays: 3,
-    landValueReq: [0, 1.0, 1.4],
+    landValueReq: [0, 0.8, 1.2],
     zoningCost: 500,
     needsUtilities: true,
     valueAddedPerJob: 1800,
@@ -138,7 +140,7 @@ export const ZONES: Record<ZoneType, ZoneDef> = {
     water: [2, 6, 15],
     pollution: [3, 8, 18],
     buildDays: 4,
-    landValueReq: [0, 0.6, 0.9],
+    landValueReq: [0, 0.5, 0.8],
     zoningCost: 500,
     needsUtilities: true,
     valueAddedPerJob: 1500,
@@ -153,7 +155,7 @@ export const ZONES: Record<ZoneType, ZoneDef> = {
     water: [1, 4, 10],
     pollution: [0, 0, 0.5],
     buildDays: 4,
-    landValueReq: [0.5, 1.1, 1.5],
+    landValueReq: [0.5, 0.85, 1.25],
     zoningCost: 500,
     needsUtilities: true,
     valueAddedPerJob: 2600,
@@ -183,7 +185,7 @@ export const ZONES: Record<ZoneType, ZoneDef> = {
     water: [1, 2, 3],
     pollution: [1, 3, 5],
     buildDays: 3,
-    landValueReq: [0, 0.6, 0.9],
+    landValueReq: [0, 0.5, 0.8],
     zoningCost: 500,
     needsUtilities: true,
     valueAddedPerJob: 1600,
@@ -198,7 +200,7 @@ export const ZONES: Record<ZoneType, ZoneDef> = {
     water: [1, 4, 8],
     pollution: [0, 0.5, 1],
     buildDays: 5,
-    landValueReq: [0.9, 1.3, 1.6],
+    landValueReq: [0.8, 1.05, 1.35],
     zoningCost: 800,
     needsUtilities: true,
     valueAddedPerJob: 4200,
@@ -757,7 +759,7 @@ export const UPGRADE_REQUIREMENT_LABELS: Record<UpgradeRequirement, string> = {
   waste: 'Сметище (капацитет)',
   clean_air: 'Чист въздух (ниско замърсяване)',
   land_value: 'Достатъчна стойност на земята',
-  occupancy: 'Сградата е пълна (≥80%)',
+  occupancy: 'Сградата е почти пълна (≥70%)',
   demand: 'Търсене за зоната',
   no_issues: 'Без нерешени сигнали наблизо',
 };
@@ -766,27 +768,21 @@ const BASE_UTIL: UpgradeRequirement[] = ['road', 'power', 'water'];
 /** Изисквания за ниво 2 и ниво 3 по зона (без общите: заетост, търсене, стойност на земята). */
 export const UPGRADE_REQUIREMENTS: Record<ZoneType, [UpgradeRequirement[], UpgradeRequirement[]]> = {
   R: [
-    [...BASE_UTIL, 'sidewalk', 'school', 'clinic', 'police_station'],
-    [...BASE_UTIL, 'sidewalk', 'school', 'clinic', 'police_station', 'fire_station', 'park', 'bus_depot', 'sewage', 'waste', 'clean_air'],
+    [...BASE_UTIL, 'sidewalk', 'school'],
+    [...BASE_UTIL, 'sidewalk', 'school', 'clinic', 'police_station', 'fire_station', 'park', 'sewage', 'waste'],
   ],
   C: [
-    [...BASE_UTIL, 'sidewalk', 'police_station', 'fire_station'],
-    [...BASE_UTIL, 'sidewalk', 'police_station', 'fire_station', 'park', 'parking', 'bus_depot', 'sewage', 'waste'],
+    [...BASE_UTIL, 'sidewalk', 'police_station'],
+    [...BASE_UTIL, 'sidewalk', 'police_station', 'fire_station', 'park', 'parking', 'sewage', 'waste'],
   ],
   O: [
-    [...BASE_UTIL, 'police_station', 'fire_station', 'bus_depot'],
-    [...BASE_UTIL, 'sidewalk', 'police_station', 'fire_station', 'bus_depot', 'park', 'parking', 'clinic', 'sewage', 'waste'],
+    [...BASE_UTIL, 'police_station'],
+    [...BASE_UTIL, 'sidewalk', 'police_station', 'fire_station', 'bus_depot', 'park', 'parking', 'sewage', 'waste'],
   ],
-  I: [
-    [...BASE_UTIL, 'fire_station'],
-    [...BASE_UTIL, 'fire_station', 'police_station', 'bus_depot', 'sewage', 'waste'],
-  ],
-  L: [
-    [...BASE_UTIL, 'fire_station'],
-    [...BASE_UTIL, 'fire_station', 'police_station', 'sewage', 'waste'],
-  ],
+  I: [[...BASE_UTIL], [...BASE_UTIL, 'fire_station', 'police_station', 'sewage', 'waste']],
+  L: [[...BASE_UTIL], [...BASE_UTIL, 'fire_station', 'police_station', 'sewage', 'waste']],
   H: [
-    [...BASE_UTIL, 'university', 'police_station', 'fire_station'],
+    [...BASE_UTIL, 'university', 'police_station'],
     [...BASE_UTIL, 'sidewalk', 'university', 'police_station', 'fire_station', 'park', 'clinic', 'bus_depot', 'sewage', 'waste', 'clean_air'],
   ],
   A: [
@@ -990,3 +986,69 @@ export const CITIZEN_FIRST = [
   'Лора',
 ];
 export const CITIZEN_LAST = ['Петров', 'Иванов', 'Георгиев', 'Димитров', 'Николов', 'Стоянов', 'Тодоров', 'Колев', 'Маринов', 'Христов', 'Илиев', 'Ангелов'];
+
+// ---------------------------------------------------------------- мащаб: реални цени и население
+// Таблиците по-горе са в „базови“ единици. Тук се прилага мащабът от scale.ts: хората, работните места,
+// потреблението и производството ×POP; цените на стоките и добавената стойност ×PRICE; паричните потоци
+// на компаниите ×ECON. Градската инфраструктура получава изрично реални цени в евро (с поддръжка на ден).
+
+/** Реални цени на обществените сгради: [строителство, поддръжка на ден] (персоналът се плаща отделно). */
+const REAL_SERVICE_PRICES: Record<ServiceType, [number, number]> = {
+  power_coal: [eur(30_000_000), eur(8_000)],
+  power_wind: [eur(3_500_000), eur(300)],
+  water_pump: [eur(1_500_000), eur(250)],
+  sewage_plant: [eur(8_000_000), eur(1_200)],
+  landfill: [eur(3_000_000), eur(500)],
+  school: [eur(4_000_000), eur(350)],
+  university: [eur(35_000_000), eur(2_500)],
+  clinic: [eur(10_000_000), eur(900)],
+  fire_station: [eur(2_500_000), eur(250)],
+  police_station: [eur(2_000_000), eur(200)],
+  bus_depot: [eur(6_000_000), eur(700)],
+  park: [eur(600_000), eur(60)],
+  parking: [eur(400_000), eur(30)],
+};
+/** Зониране (план, разрешителни, техническа инфраструктура) за плочка. */
+const REAL_ZONING: Record<ZoneType, number> = { R: eur(3_000), C: eur(3_000), I: eur(3_000), O: eur(3_000), A: eur(1_000), L: eur(3_000), H: eur(5_000) };
+
+const times = <T extends number[]>(a: T, k: number) => a.map((v) => Math.round(v * k)) as T;
+for (const g of Object.values(GOODS)) {
+  g.basePrice = Math.round(g.basePrice * PRICE);
+  g.worldVolume *= POP;
+}
+for (const z of Object.values(ZONES)) {
+  z.capacity = times(z.capacity, POP);
+  z.power = times(z.power, POP);
+  z.water = times(z.water, POP);
+  z.valueAddedPerJob = Math.round(z.valueAddedPerJob * PRICE);
+  z.zoningCost = REAL_ZONING[z.id];
+}
+for (const s of Object.values(SERVICES)) {
+  [s.cost, s.upkeep] = REAL_SERVICE_PRICES[s.id];
+  s.staff = times(s.staff, POP);
+  s.power *= POP;
+  s.water *= POP;
+  if (s.powerSupply) s.powerSupply *= POP;
+  if (s.coalUse) s.coalUse *= POP;
+  if (s.waterSupply) s.waterSupply *= POP;
+  if (s.sewageCapacity) s.sewageCapacity *= POP;
+  if (s.wasteCapacity) s.wasteCapacity *= POP;
+  if (s.capacity) s.capacity *= POP;
+}
+for (const f of Object.values(FACILITIES)) {
+  f.cost = Math.round(f.cost * ECON);
+  f.upkeep = Math.round(f.upkeep * ECON);
+  f.jobs = times(f.jobs, POP);
+  f.power *= POP;
+  f.water *= POP;
+  if (f.recipe) f.recipe.runsPerDay *= POP;
+  if (f.powerOutput) f.powerOutput *= POP;
+  if (f.coalUse) f.coalUse *= POP;
+  if (f.storageBonus) f.storageBonus *= POP;
+}
+for (const t of Object.values(TECHS)) t.dailyCost = Math.round(t.dailyCost * ECON);
+// ремонтите по сигналите – реални цени на екип с техника; сигналите са по-редки (по-лесна игра)
+for (const i of Object.values(ISSUE_TYPES)) {
+  i.fixCost *= 20;
+  i.rate *= 0.6;
+}

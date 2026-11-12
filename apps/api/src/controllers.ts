@@ -43,6 +43,13 @@ export class AuthController {
     const wallet = await D.walletBalance(prisma, user.id);
     return { user: D.publicUser(user), wallet };
   }
+
+  /** „Започни отначало“: закрива градовете и компаниите на играча и връща стартовия капитал. */
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Post('reset')
+  reset(@CurrentUser() user: User) {
+    return D.resetPlayer(prisma, user.id);
+  }
 }
 
 // ---------------------------------------------------------------- Свят и каталог

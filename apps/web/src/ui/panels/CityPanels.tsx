@@ -49,7 +49,13 @@ export function CityPanel() {
   const city = useStore((s) => s.city);
   const cities = useStore((s) => s.cities);
   const events = useApi<{ id: string; tick: number; message: string }[]>(city ? `/cities/${city.id}/events` : null);
-  if (!city) return <FoundCity />;
+  if (!city)
+    return (
+      <>
+        <FoundCity />
+        <ResetGame />
+      </>
+    );
   const s = city.stats ?? {};
   const isNew = Object.keys(city.tiles).length === 0;
   return (
@@ -57,8 +63,8 @@ export function CityPanel() {
       <h2>{city.name}</h2>
       {isNew && (
         <div className="callout">
-          <b>Първи стъпки:</b> 1) инструмент „Път“ – влачете по територията (златистата рамка); 2) „Зони“ – жилищни и индустриални до пътя; 3) „Услуги“ – ТЕЦ и
-          помпена станция за ток и вода. Сградите ще се появят сами, ако има търсене.
+          <b>Първи стъпки:</b> 1) инструмент „Път“ – влачете по територията (златистата рамка); 2) „Зони“ – жилищни, търговски и индустриални до пътя; 3)
+          „Услуги“ – вятърна централа и помпена станция за ток и вода, после училище. Сградите ще се появят сами, ако има търсене.
         </div>
       )}
       <div className="grid2">
@@ -109,7 +115,33 @@ export function CityPanel() {
         </ul>
       </Section>
       {cities.length < 5 && <FoundCity />}
+      <ResetGame />
     </div>
+  );
+}
+
+/** „Започни отначало“: изтрива градовете и компаниите на играча и връща стартовия капитал. */
+function ResetGame() {
+  return (
+    <Section title="Нова игра">
+      <p className="small muted">
+        Започнете отначало: градовете и компаниите ви се изтриват, а получавате отново {money(BALANCE.start.wallet)} в портфейла и{' '}
+        {money(BALANCE.start.cityTreasury)} за нов град. Не може да се отмени.
+      </p>
+      <AsyncButton
+        className="btn danger small"
+        onClick={async () => {
+          if (!window.confirm('Сигурни ли сте? Всичките ви градове и компании ще бъдат изтрити и започвате отначало.')) return;
+          const r = await post<{ cities: number; companies: number }>('/auth/reset', {});
+          toast(`Нова игра: изтрити ${r.cities} града и ${r.companies} компании. Изберете място за нов град.`, 'success');
+          setState({ city: null, tool: { kind: 'found', name: '' }, tutorial: 0 });
+          await refreshAll();
+          bumpData();
+        }}
+      >
+        ↺ Започни отначало
+      </AsyncButton>
+    </Section>
   );
 }
 

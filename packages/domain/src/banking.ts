@@ -1,4 +1,4 @@
-import { BALANCE, type GoodId } from '@gce/shared';
+import { BALANCE, ECON, type GoodId } from '@gce/shared';
 import { annuityPayment, creditScore, loanRate, maxBorrowing, periodInterest, type Rating } from '@gce/economy-engine';
 import { withTx, type Loan, type PrismaClient, type Tx } from '@gce/database';
 import { DomainError, bad, forbidden, notFound } from './errors';
@@ -39,7 +39,7 @@ export async function borrowerProfile(db: Tx | PrismaClient, type: BorrowerType,
   const accRow = await db.account.findUnique({ where: { id: acc.city(id) } });
   const cash = Number(accRow?.balance ?? 0n);
   const stats = city.stats as Record<string, number>;
-  const assets = Math.max(0, cash) + (stats.population ?? 0) * BALANCE.banking.cityBorrowingAssetsPerResident + 5_000_000;
+  const assets = Math.max(0, cash) + (stats.population ?? 0) * BALANCE.banking.cityBorrowingAssetsPerResident + 5_000_000 * ECON;
   const score = creditScore({
     assets,
     debt,

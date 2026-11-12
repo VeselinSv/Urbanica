@@ -13,8 +13,10 @@ import {
   setPolicy,
   undoBuild,
   worldGen,
+  placeOrder,
+  resetPlayer,
 } from '@gce/domain';
-import { BALANCE, tileKey } from '@gce/shared';
+import { BALANCE, ZONES, tileKey } from '@gce/shared';
 import { balance, cityWithRoad, companyIn, expectInvariants, player, prisma, resetDb } from './helpers';
 
 beforeAll(async () => {
@@ -83,7 +85,7 @@ describe('Град, строителство и собственост', () => {
     const body = { action: 'zone' as const, zone: 'R' as const, tiles: free.slice(0, 5) };
     const [a, b] = await Promise.all([build(prisma, p.id, city.id, body, 'same-key'), build(prisma, p.id, city.id, body, 'same-key')]);
     expect(a.cost).toBe(b.cost);
-    expect(before - (await balance(acc.city(city.id)))).toBe(5 * 500);
+    expect(before - (await balance(acc.city(city.id)))).toBe(5 * ZONES.R.zoningCost);
   });
 
   it('забранява строеж извън територията и в чужд град', async () => {
@@ -200,6 +202,26 @@ describe('Град, строителство и собственост', () => {
     // повторно (и от другия град) – отказ; чужд град – само кметът
     await expect(buildLink(prisma, q.id, b.id, a.id)).rejects.toThrow(/вече са свързани/);
     await expect(buildLink(prisma, q.id, a.id, b.id)).rejects.toMatchObject({ status: 403 });
+    await expectInvariants();
+  });
+
+  it('„Започни отначало“: градове и компании изчезват, ескроу се връща, портфейлът е стартовият, парите не се създават от нищо', async () => {
+    const p = await player('Reset');
+    const { city } = await cityWithRoad(p.id);
+    const co = await companyIn(p.id, city.id);
+    // отворена поръчка за покупка – парите са в ескроу
+    await placeOrder(prisma, p.id, { instrument: 'GOOD:coal', side: 'BUY', quantity: 5, price: 600 * 4.5, companyId: co.id, cityId: city.id });
+    const res = await resetPlayer(prisma, p.id);
+    expect(res.cities).toBe(1);
+    expect(res.companies).toBe(1);
+    expect(await prisma.city.count({ where: { ownerId: p.id } })).toBe(0);
+    expect((await prisma.company.findUniqueOrThrow({ where: { id: co.id } })).status).toBe('DISSOLVED');
+    expect(await prisma.marketOrder.count({ where: { traderId: co.id, status: 'OPEN' } })).toBe(0);
+    expect(await balance(acc.user(p.id))).toBe(BALANCE.start.wallet);
+    expect(await balance(acc.company(co.id))).toBe(0);
+    // нов град след рестарта
+    const again = await foundCity(prisma, p.id, 'Отначало');
+    expect(await balance(acc.city(again.id))).toBe(BALANCE.start.cityTreasury);
     await expectInvariants();
   });
 

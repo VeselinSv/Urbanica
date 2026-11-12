@@ -6,6 +6,7 @@ export * from './events';
 export * from './auth';
 export * from './cities';
 export * from './links';
+export * from './reset';
 export * from './issues';
 export * from './inventory';
 export * from './companies';

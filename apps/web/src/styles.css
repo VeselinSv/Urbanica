@@ -1689,3 +1689,13 @@ kbd {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ---------- опасни действия (нова игра) ---------- */
+.btn.danger {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  color: #fecaca;
+}
+.btn.danger:hover {
+  background: rgba(239, 68, 68, 0.3);
+}

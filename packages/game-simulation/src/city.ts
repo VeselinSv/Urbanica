@@ -1,5 +1,7 @@
 import {
   BALANCE,
+  ECON,
+  POP,
   isWalkable,
   FACILITIES,
   SERVICES,
@@ -356,7 +358,7 @@ export function stepCity(input: CityInput): CityStepResult {
   for (const is of openIssues) emit(is.key, (ISSUE_TYPES[is.kind]?.effects.pollution ?? 0) * is.severity);
   const sewageLoad = totalPop * U.sewagePerResident + employedTotal * U.sewagePerJob;
   const wasteLoad = totalPop * U.wastePerResident + employedTotal * U.wastePerJob;
-  const overflow = Math.max(0, sewageLoad - sewageCap) / 50 + Math.max(0, wasteLoad - wasteCap) / 50;
+  const overflow = Math.max(0, sewageLoad - sewageCap) / (50 * POP) + Math.max(0, wasteLoad - wasteCap) / (50 * POP);
   if (overflow > 0.5) events.push({ type: 'shortage', message: 'Канализацията или сметосъбирането са претоварени – замърсяването расте', severity: 'warning' });
 
   // ---------- 8. Трафик ----------
@@ -453,7 +455,8 @@ export function stepCity(input: CityInput): CityStepResult {
   const fireSvc = avgCov('fire_station');
   const transitSvc = transitShare;
   const avgWage = workforce > 0 ? totalPayroll / Math.max(1, employedTotal) : pop.wages[0];
-  const rentBurden = (landValueAvg * BALANCE.landValue.base * BALANCE.consumption.rentYield) / 360 / Math.max(1, avgWage);
+  // наемът е за целия блок (POP пъти повече хора) – сравнява се с една заплата на човек
+  const rentBurden = (landValueAvg * BALANCE.landValue.base * BALANCE.consumption.rentYield) / 360 / POP / Math.max(1, avgWage);
   let h = 0.55;
   h += 0.18 * clamp((1 - unemploymentRate - 0.85) / 0.15, -1, 1);
   h += 0.1 * eduSvc + 0.1 * healthSvc + 0.05 * safetySvc + 0.03 * fireSvc + 0.03 * transitSvc;
@@ -471,26 +474,26 @@ export function stepCity(input: CityInput): CityStepResult {
   );
   h = clamp(h, 0, 1);
   pop.happiness = Math.round((pop.happiness * 0.8 + h * 0.2) * 1000) / 1000;
-  const vacancyPull = clamp((vacancies - unemployed) / Math.max(50, workforce), -1, 1);
+  const vacancyPull = clamp((vacancies - unemployed) / Math.max(50 * POP, workforce), -1, 1);
   const attractiveness = clamp(pop.happiness * 0.7 + 0.3 * (0.5 + vacancyPull / 2), 0, 1);
 
   // ---------- 11. Търсене по зони ----------
-  const subsidyEffect = (z: ZoneType) => ((policy.subsidies[z] ?? 0) / 1000) * 0.3;
+  const subsidyEffect = (z: ZoneType) => ((policy.subsidies[z] ?? 0) / (1000 * ECON)) * 0.3;
   const bizTax = -(T.corporate - D0.corporate) * E.corporate - (T.property - D0.property) * E.property;
   const workersL12 = workers[1] + workers[2];
   const hasUniversity = services.some((s) => s.type === 'university' && s.eff > 0);
-  const bootstrap = totalPop < 200 ? 0.45 : totalPop < 600 ? 0.2 : 0;
+  const bootstrap = totalPop < 200 * POP ? 0.45 : totalPop < 600 * POP ? 0.2 : 0;
   const migration = clamp(0.5 * vacancyPull + 1.0 * (attractiveness - ctx.worldAttractiveness) + bootstrap + 0.1, -1, 1);
   const occRate = housingCap > 0 ? totalPop / housingCap : 1;
   const ratio = (need: number, have: number, floor: number) => (need - have) / Math.max(floor, need);
   const demand: Record<ZoneType, number> = {
     R: clamp(0.6 * migration + (occRate - 0.8) * 2 - (T.income - D0.income) * E.income - (T.property - D0.property) * E.property + subsidyEffect('R'), -1, 1),
-    C: clamp(ratio(totalPop * 0.12 + 6, zoneJobs.C, 20) + bizTax + subsidyEffect('C'), -1, 1),
-    I: clamp(ratio(workforce * 0.3 + 12, zoneJobs.I, 20) + 0.3 * (ctx.priceIndex - 1) + bizTax + subsidyEffect('I'), -1, 1),
-    O: clamp(ratio(workersL12 * 0.35, zoneJobs.O, 20) + bizTax + subsidyEffect('O'), -1, 1),
-    A: clamp(ratio(totalPop * 0.03 + 8, zoneJobs.A, 10) + 0.3 * (ctx.foodPriceRatio - 1) + bizTax + subsidyEffect('A'), -1, 1),
-    L: clamp(ratio((zoneJobs.I + zoneJobs.A + facilityJobs[0] + facilityJobs[1]) * 0.15, zoneJobs.L, 10) + bizTax + subsidyEffect('L'), -1, 1),
-    H: clamp(ratio(workers[2] * 0.5 + (hasUniversity ? 20 : 0), zoneJobs.H, 10) + bizTax + subsidyEffect('H'), -1, 1),
+    C: clamp(ratio(totalPop * 0.12 + 6 * POP, zoneJobs.C, 20 * POP) + bizTax + subsidyEffect('C'), -1, 1),
+    I: clamp(ratio(workforce * 0.3 + 12 * POP, zoneJobs.I, 20 * POP) + 0.3 * (ctx.priceIndex - 1) + bizTax + subsidyEffect('I'), -1, 1),
+    O: clamp(ratio(workersL12 * 0.35, zoneJobs.O, 20 * POP) + bizTax + subsidyEffect('O'), -1, 1),
+    A: clamp(ratio(totalPop * 0.03 + 8 * POP, zoneJobs.A, 10 * POP) + 0.3 * (ctx.foodPriceRatio - 1) + bizTax + subsidyEffect('A'), -1, 1),
+    L: clamp(ratio((zoneJobs.I + zoneJobs.A + facilityJobs[0] + facilityJobs[1]) * 0.15, zoneJobs.L, 10 * POP) + bizTax + subsidyEffect('L'), -1, 1),
+    H: clamp(ratio(workers[2] * 0.5 + (hasUniversity ? 20 * POP : 0), zoneJobs.H, 10 * POP) + bizTax + subsidyEffect('H'), -1, 1),
   };
   for (const z of ZONE_TYPES) demand[z] = Math.round(demand[z] * 1000) / 1000;
 
@@ -666,7 +669,7 @@ export function stepCity(input: CityInput): CityStepResult {
   } else if (migration > 0 && freeHousing > 0) {
     const inflow = Math.min(freeHousing, Math.ceil(migration * (P.minDailyMigrants + housingCap * P.maxDailyGrowthShare)));
     const vac = labor.vacancies;
-    const w = [P.initialEduMix[0] * 10 + vac[0], P.initialEduMix[1] * 10 + vac[1], P.initialEduMix[2] * 10 + vac[2]];
+    const w = [P.initialEduMix[0] * 10 * POP + vac[0], P.initialEduMix[1] * 10 * POP + vac[1], P.initialEduMix[2] * 10 * POP + vac[2]];
     const ws = w[0] + w[1] + w[2];
     let left = inflow;
     for (let l = 2; l >= 1; l--) {
@@ -717,6 +720,8 @@ export function stepCity(input: CityInput): CityStepResult {
   income.corporate_tax_zoned = tax(zonedValueAdded * 0.25, T.corporate);
   const retailSpend = totalPayroll * BALANCE.consumption.retailSpendShare;
   income.sales_tax = tax(retailSpend, T.sales);
+  // държавна субсидия за делегираните дейности (на жител)
+  income.state_transfer = Math.round(totalPop * BALANCE.city.stateTransferPerResident);
   income.utility_fees = Math.round(zonePower * policy.powerTariff * 0.5 + zoneWater * policy.waterTariff * 0.5);
 
   expenses.road_upkeep = Math.round(roadUpkeep);

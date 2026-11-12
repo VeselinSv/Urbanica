@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { io } from 'socket.io-client';
 import { processTick } from '@gce/domain';
-import { BALANCE } from '@gce/shared';
+import { BALANCE, ECON, PRICE } from '@gce/shared';
 import { prisma, resetDb } from './helpers';
 
 /**
@@ -146,13 +146,13 @@ describe('E2E: пълен път на играча', () => {
     const spots = Array.from({ length: 12 }, (_, i) => ({ x: ox + 12 + i, y: oy + 11 })).filter((t) => wg.buildable(t.x, t.y) && wg.buildable(t.x, t.y - 1));
     expect(spots.length).toBeGreaterThanOrEqual(2);
     for (const [svc, t] of [
-      ['power_coal', spots[0]],
+      ['power_wind', spots[0]],
       ['water_pump', spots[spots.length - 1]],
     ] as const) {
       const r = await call('POST', `/cities/${A.cityId}/build`, A.token, { action: 'service', service: svc, tiles: [t] });
       expect(r.status).toBe(201);
     }
-    const co = await call<{ id: string }>('POST', '/companies', A.token, { name: 'Alice Agro', hqCityId: A.cityId, capital: 2_000_000 });
+    const co = await call<{ id: string }>('POST', '/companies', A.token, { name: 'Alice Agro', hqCityId: A.cityId, capital: 2_000_000 * ECON });
     expect(co.status).toBe(201);
     A.companyId = co.data.id;
     // Ферма на плодородна плочка до пътя.
@@ -195,20 +195,20 @@ describe('E2E: пълен път на играча', () => {
   });
 
   it('9–10. произвежда ресурси и търгува с друг играч', async () => {
-    const coB = await call<{ id: string }>('POST', '/companies', B.token, { name: 'Bob Foods', hqCityId: B.cityId, capital: 2_000_000 });
+    const coB = await call<{ id: string }>('POST', '/companies', B.token, { name: 'Bob Foods', hqCityId: B.cityId, capital: 2_000_000 * ECON });
     B.companyId = coB.data.id;
     // Ако фермата не е намерила място, даваме тестова наличност чрез вътрешния слой.
     const inv = await prisma.inventory.findFirst({ where: { companyId: A.companyId, good: 'grain' } });
     if (!inv || inv.quantity < 20) {
       const { withTx } = await import('@gce/database');
       const { addGoods } = await import('@gce/domain');
-      await withTx(prisma, (tx) => addGoods(tx, A.companyId, A.cityId, 'grain', 50, 300));
+      await withTx(prisma, (tx) => addGoods(tx, A.companyId, A.cityId, 'grain', 50, 300 * PRICE));
     }
     const sell = await call<{ order: { id: string } }>(
       'POST',
       '/market/orders',
       A.token,
-      { instrument: 'GOOD:grain', side: 'SELL', quantity: 20, price: 450, companyId: A.companyId, cityId: A.cityId },
+      { instrument: 'GOOD:grain', side: 'SELL', quantity: 20, price: 450 * PRICE, companyId: A.companyId, cityId: A.cityId },
       { 'idempotency-key': 'sell-1' },
     );
     expect(sell.status).toBe(201);
@@ -216,12 +216,12 @@ describe('E2E: пълен път на играча', () => {
       instrument: 'GOOD:grain',
       side: 'BUY',
       quantity: 20,
-      price: 500,
+      price: 500 * PRICE,
       companyId: B.companyId,
       cityId: B.cityId,
     });
     expect(buy.status).toBe(201);
-    expect(buy.data.fills).toEqual([{ quantity: 20, price: 450 }]);
+    expect(buy.data.fills).toEqual([{ quantity: 20, price: 450 * PRICE }]);
     const book = await call<{ trades: { kind: string; quantity: number }[] }>('GET', '/market/book/GOOD:grain');
     expect(book.data.trades.some((t) => t.kind === 'BOOK' && t.quantity === 20)).toBe(true);
     // Чужд играч не може да отмени поръчка.

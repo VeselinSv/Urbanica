@@ -32,6 +32,7 @@ export const KIND_LABELS: Record<string, string> = {
   CITY_CORPORATE_TAX_ZONED: 'Корп. данък (зони)',
   CITY_SALES_TAX: 'Данък продажби',
   CITY_UTILITY_FEES: 'Комунални такси',
+  CITY_STATE_TRANSFER: 'Държавна субсидия',
   CITY_ROAD_UPKEEP: 'Поддръжка пътища',
   CITY_SERVICE_UPKEEP: 'Поддръжка услуги',
   CITY_SERVICE_WAGES: 'Заплати услуги',

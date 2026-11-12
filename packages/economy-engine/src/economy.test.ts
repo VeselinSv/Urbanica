@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BALANCE, GOODS, type GoodId } from '@gce/shared';
+import { BALANCE, FACILITIES, GOODS, type GoodId } from '@gce/shared';
 import {
   adjustWages,
   annuityPayment,
@@ -37,13 +37,13 @@ describe('Трудов пазар', () => {
   });
 
   it('заплатите растат при недостиг и падат при безработица в границите', () => {
-    const wages: [number, number, number] = [1000, 1600, 2800];
+    const wages = [...BALANCE.wages.base] as [number, number, number];
     const shortage = matchLabor([0, 0, 0], [100, 100, 100]);
     const up = adjustWages(wages, [100, 100, 100], shortage);
-    expect(up[0]).toBeGreaterThan(1000);
+    expect(up[0]).toBeGreaterThan(wages[0]);
     const surplus = matchLabor([500, 0, 0], [10, 0, 0]);
     const down = adjustWages(wages, [10, 0, 0], surplus);
-    expect(down[0]).toBeLessThan(1000);
+    expect(down[0]).toBeLessThan(wages[0]);
     let w = wages;
     for (let i = 0; i < 500; i++) w = adjustWages(w, [10, 0, 0], surplus);
     expect(w[0]).toBe(BALANCE.wages.min[0]);
@@ -134,7 +134,7 @@ describe('Пазар', () => {
     const far = shippingQuote(200, 10);
     expect(far.cost).toBe(200 * 10 * BALANCE.company.shippingCostPerUnitPerTile);
     expect(far.days).toBeGreaterThan(shippingQuote(30, 10).days);
-    expect(shippingQuote(100, 10, 0.7).cost).toBe(700);
+    expect(shippingQuote(100, 10, 0.7).cost).toBe(Math.round(100 * 10 * BALANCE.company.shippingCostPerUnitPerTile * 0.7));
   });
 });
 
@@ -169,9 +169,11 @@ describe('Производство', () => {
       inventory: { iron_ore: 1000, coal: 1000 },
       storageFree: 1e6,
     });
-    expect(r.runs).toBe(20);
-    expect(r.consumed).toEqual({ iron_ore: 40, coal: 20 });
-    expect(r.produced).toEqual({ steel: 20 });
+    // половин персонал → половината от дневните цикли на стоманолеярната
+    const runs = FACILITIES.steel_mill.recipe!.runsPerDay / 2;
+    expect(r.runs).toBe(runs);
+    expect(r.consumed).toEqual({ iron_ore: runs * 2, coal: runs });
+    expect(r.produced).toEqual({ steel: runs });
     expect(r.limitedBy).toBe('staff');
   });
   it('ограничено от наличните суровини и склада', () => {

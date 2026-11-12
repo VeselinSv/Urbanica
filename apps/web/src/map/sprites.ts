@@ -932,31 +932,91 @@ function drawSprite(key: BuildingKey, r: number): Sprite {
         g.fill();
       });
     case 'construction':
-      return makeSprite(r, 40, (g, P) => {
-        const b: [number, number, number, number] = [-0.3, -0.3, 0.3, 0.3];
-        poly(g, [P(-0.42, -0.42, 0), P(0.42, -0.42, 0), P(0.42, 0.42, 0), P(-0.42, 0.42, 0)], rgb(0xb59a72));
-        box(g, P, b[0], b[1], b[2], b[3], 0, 8, { wall: 0xc9c4ba });
-        // скеле
+      return makeSprite(r, 60, (g, P) => {
+        const t = (n: number) => h01(key.v, n);
+        // утъпкана земя и изкоп
+        poly(g, [P(-0.46, -0.46, 0), P(0.46, -0.46, 0), P(0.46, 0.46, 0), P(-0.46, 0.46, 0)], rgb(0xa88c66));
+        poly(g, [P(-0.34, -0.3, 0), P(0.3, -0.3, 0), P(0.3, 0.32, 0), P(-0.34, 0.32, 0)], rgb(0x7d6447));
+        const stage = t(1); // докъде е стигнал строежът
+        const b: [number, number, number, number] = [-0.3, -0.26, 0.26, 0.28];
+        const hgt = 6 + Math.floor(stage * 3) * 7;
+        shadow(g, P, b[0], b[1], b[2], b[3], hgt);
+        // бетонна конструкция: плочи и колони
+        box(g, P, b[0], b[1], b[2], b[3], 0, 2.5, { wall: 0xbdb8ae });
+        for (let z = 7; z <= hgt; z += 7) {
+          for (const [u, v] of [
+            [b[0] + 0.03, b[3] - 0.03],
+            [b[2] - 0.03, b[3] - 0.03],
+            [b[2] - 0.03, b[1] + 0.03],
+            [(b[0] + b[2]) / 2, b[3] - 0.03],
+          ])
+            box(g, P, u - 0.02, v - 0.02, u + 0.02, v + 0.02, z - 7, z - 1.2, { wall: 0x9e998f, edge: false });
+          box(g, P, b[0], b[1], b[2], b[3], z - 1.2, z, { wall: 0xc9c4ba, edge: false });
+        }
+        // скеле със зелена мрежа отпред
+        faceQuad(g, P, 'left', b, 0.05, 0.6, 0, hgt + 2, 'rgba(46,125,80,0.45)');
         g.strokeStyle = rgb(0xd08c2a);
-        g.lineWidth = 0.8 * r;
-        for (let i = 0; i <= 4; i++) {
-          const a = facePt(P, 'left', b[0], b[1], b[2], b[3], i / 4, 0);
-          const c = facePt(P, 'left', b[0], b[1], b[2], b[3], i / 4, 18);
+        g.lineWidth = 0.7 * r;
+        for (let i = 0; i <= 5; i++) {
+          const p0 = facePt(P, 'left', b[0], b[1], b[2], b[3], i / 5, 0);
+          const p1 = facePt(P, 'left', b[0], b[1], b[2], b[3], i / 5, hgt + 3);
           g.beginPath();
-          g.moveTo(a[0], a[1]);
-          g.lineTo(c[0], c[1]);
+          g.moveTo(p0[0], p0[1]);
+          g.lineTo(p1[0], p1[1]);
           g.stroke();
         }
-        // кран – само на част от строежите
-        if (h01(key.v, 3) < 0.34) {
-          const base = P(0.32, -0.32, 0);
-          g.strokeStyle = rgb(0xe0a526);
-          g.lineWidth = 0.9 * r;
+        // материали: палети тухли и купчина пясък
+        box(g, P, 0.3, 0.34, 0.42, 0.44, 0, 3, { wall: 0xb5532f, edge: false });
+        const [sx, sy] = P(-0.38, 0.4, 0);
+        g.fillStyle = rgb(0xd9c48f);
+        g.beginPath();
+        g.ellipse(sx, sy - 1.5 * r, 5 * r, 3 * r, 0, Math.PI, 0);
+        g.fill();
+        // ограда от ламарина отпред
+        for (const [u0, u1] of [
+          [-0.46, -0.05],
+          [0.1, 0.46],
+        ])
+          faceQuad(g, P, 'left', [-0.46, -0.46, 0.46, 0.46], (u0 + 0.46) / 0.92, (u1 + 0.46) / 0.92, 0, 3.2, rgb(0x5f8fb0, 0.95));
+        // кулокран – на всеки втори строеж
+        if (t(3) < 0.55) {
+          const [bx, by] = P(0.36, -0.36, 0);
+          const top = by - (hgt + 30) * r;
+          g.strokeStyle = rgb(0xf2b705);
+          g.lineWidth = 1.2 * r;
           g.beginPath();
-          g.moveTo(base[0], base[1]);
-          g.lineTo(base[0], base[1] - 30 * r);
-          g.lineTo(base[0] - 18 * r, base[1] - 30 * r);
+          g.moveTo(bx - 1.2 * r, by);
+          g.lineTo(bx - 1.2 * r, top);
+          g.moveTo(bx + 1.2 * r, by);
+          g.lineTo(bx + 1.2 * r, top);
           g.stroke();
+          g.lineWidth = 0.4 * r;
+          for (let yy = by; yy > top; yy -= 3 * r) {
+            g.beginPath();
+            g.moveTo(bx - 1.2 * r, yy);
+            g.lineTo(bx + 1.2 * r, yy - 3 * r);
+            g.stroke();
+          }
+          // стрела, противотежест, въже с товар
+          const dir = t(4) < 0.5 ? -1 : 1;
+          g.lineWidth = 1.1 * r;
+          g.beginPath();
+          g.moveTo(bx - dir * 8 * r, top);
+          g.lineTo(bx + dir * 26 * r, top + dir * 0);
+          g.stroke();
+          g.fillStyle = rgb(0x6b6f75);
+          g.fillRect(bx - dir * 9 * r - 2 * r, top - 1 * r, 4 * r, 3 * r);
+          g.strokeStyle = 'rgba(40,40,40,0.8)';
+          g.lineWidth = 0.4 * r;
+          const hx = bx + dir * (12 + t(5) * 12) * r;
+          g.beginPath();
+          g.moveTo(hx, top);
+          g.lineTo(hx, top + 14 * r);
+          g.stroke();
+          g.fillStyle = rgb(0x8a8f96);
+          g.fillRect(hx - 2 * r, top + 14 * r, 4 * r, 2.5 * r);
+          g.fillStyle = rgb(0xffffff, 1, 0.9);
+          g.fillRect(bx - 1.5 * r, top - 4 * r, 3 * r, 3 * r);
         }
       });
     case 'zone':

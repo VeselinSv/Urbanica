@@ -105,6 +105,23 @@ function grainPattern(g: Ctx): CanvasPattern | null {
   return g.createPattern(noiseCanvas, 'repeat');
 }
 
+/** Плавен стойностен шум (0..1) с мащаб scale плочки – за поляни в горите и петна в тревата. */
+export function smoothNoise(wx: number, wy: number, scale: number, seed: number) {
+  const x = wx / scale;
+  const y = wy / scale;
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const tx = x - x0;
+  const ty = y - y0;
+  const sx = tx * tx * (3 - 2 * tx);
+  const sy = ty * ty * (3 - 2 * ty);
+  const a = h01(x0, y0, seed);
+  const b = h01(x0 + 1, y0, seed);
+  const c = h01(x0, y0 + 1, seed);
+  const d = h01(x0 + 1, y0 + 1, seed);
+  return (a * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
+}
+
 // ------------------------------------------------------------------ терен
 /** Цвят на терена в произволна точка (wx, wy) – непрекъснато, с хълмово осветяване. */
 export function terrainSampler(gen: WorldGenerator) {
@@ -183,17 +200,27 @@ export function terrainSampler(gen: WorldGenerator) {
     const m = bil(M, wx, wy);
     const f = bil(F, wx, wy);
     col = mixc(C.grassDry, C.grassLush, clamp01((m - 0.3) * 2));
+    // петна в тревата (ливади, ниви, сенчести участъци)
+    const patch = smoothNoise(wx, wy, 5, 91) - 0.5;
+    col = patch > 0 ? mixc(col, 0x9fbf5a, patch * 0.35) : mixc(col, 0x557f3a, -patch * 0.3);
     // пясък по крайбрежието
     if (w > 0.28 && h < SEA + 0.035) col = mixc(col, C.sand, clamp01((w - 0.28) * 4.5));
     if (f > 0.35) col = mixc(col, C.forestFloor, clamp01((f - 0.35) * 2.2));
     if (h > HILLS - 0.04) col = mixc(col, C.hills, clamp01((h - HILLS + 0.04) / 0.1) * 0.7);
+    // алпийски ливади над горския пояс
+    if (h > 0.7) col = mixc(col, 0xa6a46a, clamp01((h - 0.7) / 0.06) * 0.6);
     if (h > MOUNTAINS - 0.03) col = mixc(col, C.rock, clamp01((h - MOUNTAINS + 0.03) / 0.07));
+    // стръмните склонове са скалисти
+    const gx = bil(H, wx + 0.5, wy) - bil(H, wx - 0.5, wy);
+    const gy = bil(H, wx, wy + 0.5) - bil(H, wx, wy - 0.5);
+    const slope = Math.sqrt(gx * gx + gy * gy);
+    if (h > HILLS - 0.05) col = mixc(col, mixc(C.rock, 0x6f6a62, 0.4), clamp01((slope - 0.025) * 18) * 0.75);
     if (h > 0.83) col = mixc(col, C.snow, clamp01((h - 0.83) / 0.05));
     // извън България – избледнял фон (там не се строи)
     if (at(c.region, Math.floor(wx), Math.floor(wy)) === 255) col = mixc(col, 0x8a9096, 0.55);
     // хълмово осветяване (светлина отгоре-вляво на екрана = посока -x)
     const dh = bil(H, wx - 0.6, wy - 0.15) - bil(H, wx + 0.6, wy + 0.15);
-    const sh = 1 + Math.max(-0.45, Math.min(0.4, dh * 22)) + n * 0.05;
+    const sh = 1 + Math.max(-0.5, Math.min(0.45, dh * 26)) + n * 0.05;
     out[0] = Math.min(255, ((col >> 16) & 255) * sh);
     out[1] = Math.min(255, ((col >> 8) & 255) * sh);
     out[2] = Math.min(255, (col & 255) * sh);
@@ -239,7 +266,7 @@ function paintRivers(g: Ctx, gen: WorldGenerator, x0: number, y0: number, x1: nu
   g.lineCap = 'round';
   g.lineJoin = 'round';
   const rivers = gen.rivers.filter((r) => bboxHit(r.points, x0 - 4, y0 - 4, x1 + 4, y1 + 4));
-  for (const pass of [0, 1, 2, 3]) {
+  for (const pass of [0, 1, 2, 3, 4, 5]) {
     for (const r of rivers) {
       const p = r.points;
       for (let i = 0; i < p.length - 1; i++) {
@@ -254,19 +281,29 @@ function paintRivers(g: Ctx, gen: WorldGenerator, x0: number, y0: number, x1: nu
         g.moveTo(a.x, a.y);
         g.lineTo(b.x, b.y);
         if (pass === 0) {
-          g.lineWidth = w + 0.45;
-          g.strokeStyle = rgb(C.bank, 1, 0.9);
+          // крайбрежна растителност (по-тъмна, влажна трева)
+          g.lineWidth = w + 1.6;
+          g.strokeStyle = 'rgba(52,96,40,0.28)';
         } else if (pass === 1) {
-          g.lineWidth = w;
-          g.strokeStyle = rgb(C.river);
+          // бряг: чакъл и пясък
+          g.lineWidth = w + 0.42;
+          g.strokeStyle = rgb(C.bank, 1, 0.92);
         } else if (pass === 2) {
-          g.lineWidth = w * 0.45;
-          g.strokeStyle = rgb(C.riverDeep, 1, 0.8);
+          // плитка вода до бреговете
+          g.lineWidth = w;
+          g.strokeStyle = rgb(mixc(C.river, 0x7fb9c9, 0.35));
+        } else if (pass === 3) {
+          g.lineWidth = w * 0.7;
+          g.strokeStyle = rgb(C.river);
+        } else if (pass === 4) {
+          g.lineWidth = w * 0.38;
+          g.strokeStyle = rgb(C.riverDeep, 1, 0.85);
         } else {
-          if (w < 1) continue;
-          g.lineWidth = 0.05;
-          g.strokeStyle = 'rgba(220,240,250,0.35)';
-          g.setLineDash([0.4, 0.9]);
+          // течение – светли прекъснати линии
+          if (w < 0.7) continue;
+          g.lineWidth = 0.04;
+          g.strokeStyle = 'rgba(225,242,250,0.4)';
+          g.setLineDash([0.35, 0.8]);
         }
         g.stroke();
         g.setLineDash([]);
@@ -654,6 +691,14 @@ function paintBridgesTunnels(g: Ctx, gen: WorldGenerator, roads: RoadTile[], loo
       const st = roadStyle(r.t);
       const cx = r.x + 0.5;
       const cy = r.y + 0.5;
+      // бетонни ръбове на плочата на моста
+      g.lineCap = 'butt';
+      roadPath(g, r);
+      g.lineWidth = st.width + 0.16;
+      g.strokeStyle = rgb(0xb9b5ac);
+      g.globalCompositeOperation = 'destination-over';
+      g.stroke();
+      g.globalCompositeOperation = 'source-over';
       for (let i = 0; i < 4; i++) {
         if (!r.arms[i] && r.n > 0) continue;
         const [dx, dy] = DIRS[i];
@@ -839,6 +884,25 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
           // улични лампи по тротоарите (на правите участъци, през плочка); светофарите са живи – traffic.ts
           const lamp = !mid ? lampAt(x, y, t, lookup) : null;
           if (lamp) out.push({ d: lamp.wx + lamp.wy, wx: lamp.wx, wy: lamp.wy, draw: (g, px, py) => streetLamp(g, px, py, opts.res, lamp.arm) });
+          // дървета по тротоарите на кварталните улици (през една плочка, на другата страна от лампата)
+          if (!mid && !t.j && hasSidewalk(t) && (t.c ?? 'street') === 'street' && h01(x, y, 18) < 0.55) {
+            const horiz = lookup(x + 1, y)?.t === 'road' && lookup(x - 1, y)?.t === 'road';
+            const vert = lookup(x, y + 1)?.t === 'road' && lookup(x, y - 1)?.t === 'road';
+            if (horiz !== vert) {
+              const geo = ROAD_GEOM.street;
+              const side = lamp ? (h01(x, y, 16) < 0.5 ? 1 : -1) : h01(x, y, 19) < 0.5 ? -1 : 1;
+              const off = (geo.width / 2 + 0.08) * side;
+              const along = 0.25 + h01(x, y, 20) * 0.5;
+              const tx = horiz ? x + along : x + 0.5 + off;
+              const ty = horiz ? y + 0.5 + off : y + along;
+              out.push({
+                d: tx + ty,
+                wx: tx,
+                wy: ty,
+                key: { k: 'tree', t: h01(x, y, 21) < 0.5 ? 'oak' : h01(x, y, 22) < 0.5 ? 'birch' : 'poplar', v: Math.floor(h01(x, y, 23) * 8), size: 0.95 },
+              });
+            }
+          }
           // дървета в средната ивица на булевардите
           if (t.c === 'avenue' && !t.j && h01(x, y, 13) < 0.6) {
             const horiz = lookup(x + 1, y)?.t === 'road' && lookup(x - 1, y)?.t === 'road';
@@ -854,11 +918,24 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
       const f = c.forest[k];
       const h = c.height[k];
       let count = 0;
+      const clearing = smoothNoise(x, y, 6, 57);
       if (opts.cleared?.(x, y)) count = h01(x, y, 27) < 0.08 ? 1 : 0;
-      else if (f > 0.5) count = mid ? 2 : 4;
+      else if (f > 0.5) count = clearing < 0.24 ? (h01(x, y, 28) < 0.25 ? 1 : 0) : clearing < 0.32 ? (mid ? 1 : 2) : mid ? 2 : 4;
       else if (f > 0.3) count = h01(x, y, 23) < f * 1.6 ? (h01(x, y, 26) < 0.5 ? 2 : 1) : 0;
       else if (h > MOUNTAINS) count = 0;
       else count = h01(x, y, 25) < 0.06 + f * 0.3 ? 1 : 0;
+      // горски пояс: над него – редки дървета, после само скали и сняг
+      if (h > 0.8) count = 0;
+      else if (h > 0.74) count = Math.min(count, h01(x, y, 29) < 0.3 ? 1 : 0);
+      // покрай реките – върби и тополи
+      let riverside = false;
+      if (!opts.cleared?.(x, y))
+        for (const [dx, dy] of DIRS)
+          if (c.water[(y + dy) * N + (x + dx)] === WATER_RIVER) {
+            riverside = true;
+            break;
+          }
+      if (riverside && count < 2 && h01(x, y, 30) < 0.6) count = Math.max(count, 1);
       for (let i = 0; i < count; i++) {
         const fx = (i % 2) * 0.5 + 0.08 + h01(x, y, i, 31) * 0.36;
         const fy = (Math.floor(i / 2) % 2) * 0.5 + 0.08 + h01(x, y, i, 32) * 0.36 + (count === 1 ? 0.2 : 0);
@@ -869,9 +946,10 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
           wy: y + fy,
           key: {
             k: 'tree',
-            t: treeKind(gen, x, y, s),
+            t: riverside && i === 0 ? (h01(x, y, 31) < 0.6 ? 'willow' : 'poplar') : treeKind(gen, x, y, s),
             v: Math.floor(h01(x, y, i, 34) * 8),
-            size: 1.8 + (Math.floor(h01(x, y, i, 35) * 4) / 4) * 0.9,
+            // по-високо – по-ниски дървета
+            size: (1.8 + (Math.floor(h01(x, y, i, 35) * 4) / 4) * 0.9) * (h > 0.7 ? 0.8 : 1),
           },
         });
       }
