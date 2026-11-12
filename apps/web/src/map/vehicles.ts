@@ -308,12 +308,32 @@ function drawCar(g: Ctx, model: CarModel, color: number, yaw: number) {
       const hatch = model === 'hatch';
       const hb = suv ? 5.6 : 4.5;
       const hc = suv ? 9.6 : hatch ? 8 : 7.6;
-      parts.push({ base: [-L / 2, L / 2, -hw, hw], top: [-L / 2 + 0.01, L / 2 - 0.012, -hw + 0.008, hw - 0.008], h0: 1.3, h1: hb, side: body, topMat: body });
-      const c0 = hatch ? -L / 2 + 0.012 : suv ? -L / 2 + 0.02 : -0.085;
-      const c1 = hatch ? 0.05 : suv ? 0.07 : 0.07;
-      const t0 = hatch ? -L / 2 + 0.02 : suv ? -L / 2 + 0.025 : -0.06;
-      const t1 = hatch ? 0.015 : suv ? 0.035 : 0.03;
-      parts.push({ base: [c0, c1, -hw + 0.012, hw - 0.012], top: [t0, t1, -hw + 0.027, hw - 0.027], h0: hb, h1: hc, side: glassSides, topMat: body });
+      // тъмни прагове и брони (пластмаса) – долната част на колата
+      parts.push({
+        base: [-L / 2, L / 2, -hw, hw],
+        top: [-L / 2 + 0.003, L / 2 - 0.003, -hw + 0.003, hw - 0.003],
+        h0: 1.0,
+        h1: 2.3,
+        side: 0x23262b,
+        topMat: body,
+      });
+      // каросерия със заоблени „рамене“ (горната част е по-тясна и по-къса – като истински капак и багажник)
+      parts.push({
+        base: [-L / 2 + 0.003, L / 2 - 0.003, -hw + 0.001, hw - 0.001],
+        top: [-L / 2 + 0.016, L / 2 - (suv ? 0.012 : 0.024), -hw + 0.012, hw - 0.012],
+        h0: 2.3,
+        h1: hb,
+        side: body,
+        topMat: body,
+      });
+      // кабина: наклонено предно и задно стъкло, стеснени колони, отделен покрив
+      const c0 = hatch ? -L / 2 + 0.016 : suv ? -L / 2 + 0.022 : -0.088;
+      const c1 = hatch ? 0.05 : suv ? 0.066 : 0.064;
+      const t0 = hatch ? -L / 2 + 0.024 : suv ? -L / 2 + 0.03 : -0.058;
+      const t1 = hatch ? 0.008 : suv ? 0.03 : 0.018;
+      const rb = hc - (suv ? 0.8 : 0.6);
+      parts.push({ base: [c0, c1, -hw + 0.013, hw - 0.013], top: [t0, t1, -hw + 0.03, hw - 0.03], h0: hb, h1: rb, side: glassSides, topMat: body });
+      parts.push({ base: [t0, t1, -hw + 0.03, hw - 0.03], top: [t0 + 0.004, t1 - 0.004, -hw + 0.033, hw - 0.033], h0: rb, h1: hc, side: body, topMat: body });
       if (model === 'taxi')
         parts.push({ base: [-0.02, 0.015, -0.026, 0.026], top: [-0.016, 0.011, -0.022, 0.022], h0: hc, h1: hc + 1.8, side: 0xfafafa, topMat: 0xf4d03f });
       if (model === 'police') {
@@ -431,15 +451,19 @@ function drawPerson(g: Ctx, v: number, away: boolean, phase: number) {
   g.beginPath();
   g.ellipse(0.7, 0.2, 1.8, 0.7, 0, 0, Math.PI * 2);
   g.fill();
-  // крака
+  // крака (с обувки)
   g.strokeStyle = rgb(pants);
   g.lineCap = 'round';
   g.lineWidth = 0.75;
   for (const s of [-1, 1]) {
     g.beginPath();
     g.moveTo(s * 0.35, -3 + bob);
-    g.lineTo(s * 0.35 + s * swing * 0.9, 0);
+    g.lineTo(s * 0.35 + s * swing * 0.9, -0.2);
     g.stroke();
+    g.fillStyle = (v >>> 11) % 3 === 0 ? '#e8e6df' : '#1c1d20';
+    g.beginPath();
+    g.ellipse(s * 0.35 + s * swing * 0.9 + 0.15, -0.1, 0.48, 0.26, 0, 0, Math.PI * 2);
+    g.fill();
   }
   // тяло (рокля или риза)
   const tg = g.createLinearGradient(-1.1, 0, 1.1, 0);
@@ -469,10 +493,18 @@ function drawPerson(g: Ctx, v: number, away: boolean, phase: number) {
     g.lineTo(s * 1.15 - s * swing * 0.7, -3.3 + bob);
     g.stroke();
   }
-  // глава
-  g.fillStyle = rgb(skin);
+  // яка / шал и шия
+  g.fillStyle = rgb(shirt, 0.6);
+  g.fillRect(-0.5, -5.75 + bob, 1, 0.3);
+  g.fillStyle = rgb(skin, 0.9);
+  g.fillRect(-0.28, -6.05 + bob, 0.56, 0.4);
+  // глава със светлина отгоре-вляво
+  const hg = g.createRadialGradient(-0.3, -6.95 + bob, 0.1, 0, -6.6 + bob, 1.05);
+  hg.addColorStop(0, rgb(skin, 1.1));
+  hg.addColorStop(1, rgb(skin, 0.82));
+  g.fillStyle = hg;
   g.beginPath();
-  g.arc(0, -6.6 + bob, 0.95, 0, Math.PI * 2);
+  g.arc(0, -6.6 + bob, 0.92, 0, Math.PI * 2);
   g.fill();
   g.fillStyle = rgb(hair);
   g.beginPath();

@@ -700,11 +700,16 @@ export function tunnelKind(gen: WorldGenerator, lookup: TileLookup, x: number, y
   if (lookup(x, y)?.t !== 'road') return null;
   const isM = (a: number, b: number) => gen.terrain[b * gen.size + a] === Terrain.Mountains;
   if (!isM(x, y)) return null;
+  // единична „планинска“ плочка (хълм посред равнината) не е тунел – пътят минава отгоре
+  let mountainNeighbours = 0;
+  for (const [dx, dy] of DIRS) if (isM(x + dx, y + dy)) mountainNeighbours++;
+  if (mountainNeighbours < 2) return null;
   let arms = 0;
   for (const [dx, dy] of DIRS) {
     if (lookup(x + dx, y + dy)?.t !== 'road') continue;
     arms++;
-    if (!isM(x + dx, y + dy)) return 'portal';
+    // вход: от тази страна пътят идва от равното, а от другата продължава в планината
+    if (!isM(x + dx, y + dy)) return isM(x - dx, y - dy) && lookup(x - dx, y - dy)?.t === 'road' ? 'portal' : null;
   }
   return arms ? 'inside' : null;
 }
@@ -1011,7 +1016,7 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
           continue;
         }
       }
-      if (h > MOUNTAINS - 0.03 && h01(x, y, 40) < 0.3)
+      if (h > MOUNTAINS - 0.03 && h01(x, y, 40) < 0.3 && !opts.cleared?.(x, y))
         out.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'rock', v: Math.floor(h01(x, y, 41) * 8) } });
     }
   out.sort((a, b) => a.d - b.d || a.wx - b.wx);

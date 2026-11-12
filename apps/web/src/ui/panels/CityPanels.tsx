@@ -12,14 +12,16 @@ import {
   type CityDerived,
   type CityPolicy,
   type FacilityType,
+  type GrowthBlocker,
   type TileMap,
   type UpgradeRequirement,
+  type ZoneType,
 } from '@gce/shared';
 import { getWorld } from '@gce/world-generation';
 import { patch, post } from '../../api';
-import { bumpData, refreshAll, refreshCity, setState, toast, useStore } from '../../store';
+import { bumpData, getState, refreshAll, refreshCity, setState, toast, useStore } from '../../store';
 import { KIND_LABELS, money, moneyExact, num, pct, toCents } from '../../format';
-import { DevPlan } from '../plan';
+import { DevPlan, bestJobZone } from '../plan';
 import { AsyncButton, DemandBar, Field, Meter, Section, Stat, Table, useApi } from '../common';
 import { describeTile } from '../../map/MapView';
 import { REQ_ICON, reqTool, reqToolLabel } from '../needs';
@@ -571,6 +573,104 @@ function UpgradeBlockers({ blockers }: { blockers?: Partial<Record<UpgradeRequir
   );
 }
 
+/** Защо в зоната не се строи – обяснение с прости думи и инструментът, който го оправя. */
+function growthText(
+  b: GrowthBlocker,
+  z: ZoneType,
+  city: CityState,
+): { icon: string; text: string; fix?: { label: string; tool: Parameters<typeof setState>[0] } } {
+  const s = (city.stats ?? {}) as { demand?: Record<string, number>; unemploymentRate?: number; population?: number };
+  const d = s.demand?.[z] ?? 0;
+  switch (b) {
+    case 'road':
+      return {
+        icon: '🛣',
+        text: 'Няма улица на до 2 плочки – сградите се строят само до път.',
+        fix: { label: 'Строй улица', tool: { tool: { kind: 'road', cls: 'street' } } },
+      };
+    case 'power':
+      return {
+        icon: '⚡',
+        text: 'Тук няма ток – постройте централа (токът стига до всяка плочка до път).',
+        fix: { label: 'Централа', tool: { tool: { kind: 'service', service: 'power_wind' }, layer: 'power' } },
+      };
+    case 'power_capacity':
+      return {
+        icon: '⚡',
+        text: 'Централите са натоварени – няма резерв ток за нова сграда.',
+        fix: { label: '+ Централа', tool: { tool: { kind: 'service', service: 'power_wind' }, layer: 'power' } },
+      };
+    case 'water':
+      return {
+        icon: '💧',
+        text: 'Тук няма вода – постройте помпена станция (най-добре до река).',
+        fix: { label: 'Помпа', tool: { tool: { kind: 'service', service: 'water_pump' }, layer: 'water' } },
+      };
+    case 'water_capacity':
+      return {
+        icon: '💧',
+        text: 'Помпите са натоварени – няма резерв вода за нова сграда.',
+        fix: { label: '+ Помпа', tool: { tool: { kind: 'service', service: 'water_pump' }, layer: 'water' } },
+      };
+    case 'demand': {
+      const pctD = `${Math.round(d * 100)}%`;
+      if (z === 'R')
+        return {
+          icon: '🏠',
+          text: `Няма търсене на жилища (${pctD}) – хората не идват, докато няма работа и услуги${(s.unemploymentRate ?? 0) > 0.1 ? ` (безработица ${Math.round((s.unemploymentRate ?? 0) * 100)}%)` : ''} или още има празни жилища.`,
+        };
+      const best = bestJobZone(city);
+      const name = ZONES[z].name.toLowerCase();
+      return {
+        icon: '📉',
+        text: `Няма търсене на ${name} зона (${pctD}) – вече има достатъчно такива сгради за сегашните жители и работници.${best.zone !== z ? ` Сега има търсене на ${best.name}.` : ' Търсенето расте с жителите и безработните.'}`,
+        fix: best.zone !== z ? { label: best.label, tool: { tool: { kind: 'zone', zone: best.zone } } } : undefined,
+      };
+    }
+  }
+}
+
+type CityState = NonNullable<ReturnType<typeof getState>['city']>;
+
+/** За празна или изоставена зона: какво ѝ трябва, за да започне строеж. */
+function GrowthChecklist({ cityId, x, y }: { cityId: string; x: number; y: number }) {
+  const city = useStore((s) => s.city);
+  const layers = useApi<CityDerived>(city?.isOwner ? `/cities/${cityId}/layers` : null, [cityId, city?.stats?.tick]);
+  const tile = city ? (city.tiles as TileMap)[tileKey(x, y)] : undefined;
+  if (!city?.isOwner || !tile || tile.t !== 'zone' || (tile.lvl > 0 && !tile.ab)) return null;
+  if (!tile.ab && tile.prog > 0)
+    return (
+      <Section title="🏗 В строеж">
+        <p className="small">Сградата се строи – готова е след около {tile.prog} дни.</p>
+      </Section>
+    );
+  const list = layers.data?.growth?.[tileKey(x, y)];
+  if (!list) return <p className="small muted">Причините ще се изчислят на следващия игрови ден.</p>;
+  return (
+    <Section title={tile.ab ? '⚠ Защо сградата е изоставена' : '🔍 Защо тук не се строи'}>
+      {list.length === 0 ? (
+        <p className="small">Всички условия са изпълнени – строежът ще започне до няколко дни.</p>
+      ) : (
+        <ul className="checklist">
+          {list.map((b) => {
+            const g = growthText(b, tile.z, city);
+            return (
+              <li key={b} className="miss">
+                ✖ {g.icon} {g.text}
+                {g.fix && (
+                  <button className="need-fix" onClick={() => setState(g.fix!.tool)}>
+                    {g.fix.label}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
 /** Списък с условията за следващото ниво на сграда (✔ изпълнено / ✖ липсва). */
 function UpgradeChecklist({ cityId, x, y }: { cityId: string; x: number; y: number }) {
   const city = useStore((s) => s.city);
@@ -650,13 +750,7 @@ export function InspectPanel() {
       <h2>
         Плочка ({sel.x}, {sel.y})
       </h2>
-      <div className="grid2">
-        <Stat label="Плодородие" value={pct(t.fertility, 0)} />
-        <Stat label="Надморска височина" value={t.elevation.toFixed(2)} />
-        <Stat label="Находище" value={t.deposit === 'none' ? '—' : `${t.deposit === 'iron' ? 'Желязо' : 'Въглища'} (${pct(t.richness, 0)})`} />
-        <Stat label="Риск от наводнение" value={pct(t.floodRisk, 0)} tone={t.floodRisk > 0.3 ? 'warn' : undefined} />
-        <Stat label="Климат" value={t.climate === 'arid' ? 'сух' : t.climate === 'cold' ? 'студен' : 'умерен'} />
-      </div>
+
       {tile ? (
         <p>
           <b>{describeTile(tile)}</b>
@@ -666,7 +760,15 @@ export function InspectPanel() {
       ) : (
         <p className="muted">Празна плочка</p>
       )}
+      {city && <GrowthChecklist cityId={city.id} x={sel.x} y={sel.y} />}
       {city && <UpgradeChecklist cityId={city.id} x={sel.x} y={sel.y} />}
+      <div className="grid2" style={{ marginTop: 10 }}>
+        <Stat label="Плодородие" value={pct(t.fertility, 0)} />
+        <Stat label="Надморска височина" value={t.elevation.toFixed(2)} />
+        <Stat label="Находище" value={t.deposit === 'none' ? '—' : `${t.deposit === 'iron' ? 'Желязо' : 'Въглища'} (${pct(t.richness, 0)})`} />
+        <Stat label="Риск от наводнение" value={pct(t.floodRisk, 0)} tone={t.floodRisk > 0.3 ? 'warn' : undefined} />
+        <Stat label="Климат" value={t.climate === 'arid' ? 'сух' : t.climate === 'cold' ? 'студен' : 'умерен'} />
+      </div>
       {f && (
         <Section title={`${FACILITIES[f.type as FacilityType].name} – ${company.data?.name}`}>
           <Meter label="Персонал" value={f.staffing} />

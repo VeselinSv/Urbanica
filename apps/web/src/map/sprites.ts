@@ -48,7 +48,7 @@ function pick<T>(arr: T[], t: number): T {
 }
 
 // Светлина: слънце горе-вляво. Лявата стена (+v, към долу-ляво) е огряна, дясната (+u) е в сянка.
-const LIT = { top: 1.06, left: 0.94, right: 0.68 };
+const LIT = { top: 1.08, left: 0.96, right: 0.62 };
 
 const WALLS = [0xf2ead8, 0xe8dcc2, 0xf4f1ea, 0xdcc9a8, 0xe9d3b0, 0xcfc6b8, 0xf0e2c8, 0xd8b99a, 0xe6e1d6, 0xc9b49a, 0xe7d7c1, 0xd6cfc4];
 const BRICK = [0xa65b3f, 0xb36a48, 0x8f4e3a, 0xa8705a];
@@ -192,6 +192,13 @@ function box(g: Ctx, P: P3, u0: number, v0: number, u1: number, v1: number, z0: 
   tg.addColorStop(0, rgb(top, LIT.top * 1.03));
   tg.addColorStop(1, rgb(top, LIT.top * 0.94));
   poly(g, tp, tg);
+  // цокъл: по-тъмна ивица в основата на стените (камък/бетон) – сградата „стъпва“ на земята
+  if (s.edge !== false && z0 === 0 && z1 > 10) {
+    const ph = Math.min(3, z1 * 0.12);
+    poly(g, [P(u1, v0, 0), P(u1, v1, 0), P(u1, v1, ph), P(u1, v0, ph)], rgb(mixc(s.wall, 0x4a4540, 0.55), LIT.right * 0.9));
+    poly(g, [P(u0, v1, 0), P(u1, v1, 0), P(u1, v1, ph), P(u0, v1, ph)], rgb(mixc(s.wall, 0x4a4540, 0.55), LIT.left * 0.9));
+    line(g, P(u0, v1, ph), P(u1, v1, ph), 'rgba(255,255,255,0.18)', 0.5);
+  }
   if (s.edge !== false) {
     // тъмен преден ъгъл и светли горни ръбове (обем)
     line(g, P(u1, v1, z0), P(u1, v1, z1), 'rgba(0,0,0,0.22)', 0.6);
@@ -322,6 +329,11 @@ function windows(g: Ctx, P: P3, r: number, b: [number, number, number, number], 
         const top = lit ? rgb(0xffe7b0, shade) : rgb(mixc(ws.glass, 0xe3f2ff, 0.5), shade);
         const bot = lit ? rgb(0xf0b860, shade * 0.9) : rgb(mixc(ws.glass, 0x1d2b38, 0.35), shade);
         faceQuad(g, P, face, b, s0, s1, za, zb, faceGrad(g, P, face, b, (s0 + s1) / 2, za, zb, bot, top));
+        // диагонален отблясък на небето по стъклото
+        if (!lit && (s1 - s0) * len > 0.04) {
+          const m = s0 + (s1 - s0) * 0.62;
+          faceQuad(g, P, face, b, m, Math.min(s1, m + (s1 - s0) * 0.14), za + (zb - za) * 0.25, zb - 0.6, `rgba(255,255,255,${0.28 * shade})`);
+        }
         // сянка от горния праг
         faceQuad(g, P, face, b, s0, s1, zb - 1.1, zb, 'rgba(0,0,0,0.22)');
         // перде в част от прозорците

@@ -24,6 +24,7 @@ import {
   UPGRADE_REQUIREMENTS,
   type UpgradeRequirement,
   ISSUE_TYPES,
+  type GrowthBlocker,
 } from '@gce/shared';
 import { adjustWages, matchLabor, payroll, splitJobs, tax, type Tri } from '@gce/economy-engine';
 import type { WorldGenerator } from '@gce/world-generation';
@@ -584,6 +585,26 @@ export function stepCity(input: CityInput): CityStepResult {
         Math.max(1, input.territory.length));
   let floodDamage = 0;
   const residentShare = housingCap > 0 ? Math.min(1, totalPop / housingCap) : 0;
+  // Резервът в мрежите се „запазва“ при всеки започнат строеж – иначе в един ден започват наведнъж
+  // повече сгради, отколкото токът и водата стигат, и после всички остават без ток.
+  let spareP = powerSpare;
+  let spareW = waterSpare;
+  const anyPower = totalPowerSupply > 0;
+  const anyWater = waterSupply > 0;
+  const growth: Record<string, GrowthBlocker[]> = {};
+  const whyNot = (def: (typeof ZONES)[ZoneType], hasRoad: boolean, pOk: boolean, wOk: boolean, D: number, minD: number): GrowthBlocker[] => {
+    const out: GrowthBlocker[] = [];
+    // без път няма и ток, и вода – достатъчно е да се каже „път“
+    if (!hasRoad) out.push('road');
+    else if (def.needsUtilities) {
+      if (!anyPower || !pOk) out.push('power');
+      else if (spareP <= 0) out.push('power_capacity');
+      if (!anyWater || !wOk) out.push('water');
+      else if (spareW <= 0) out.push('water_capacity');
+    }
+    if (D <= minD) out.push('demand');
+    return out;
+  };
   for (const [k, t] of Object.entries(tiles)) {
     if (t.t !== 'zone') continue;
     const def = ZONES[t.z];
@@ -594,6 +615,7 @@ export function stepCity(input: CityInput): CityStepResult {
     const wOk = !def.needsUtilities || (access.has(k) && rand01(seed, tick, hashString(k), 11) < waterRatio.zones + 1e-9);
     const ok = hasRoad && pOk && wOk;
     if (t.ab) {
+      growth[k] = whyNot(def, hasRoad, pOk, wOk, D, 0.3);
       if (ok && D > 0.3 && r < 0.05) {
         t.ab = false;
         t.hp = 0.6;
@@ -612,9 +634,15 @@ export function stepCity(input: CityInput): CityStepResult {
           t.occ = t.z === 'R' ? 0.1 : 0.3;
           t.hp = 1;
         }
-      } else if (ok && (!def.needsUtilities || (powerSpare > 0 && waterSpare > 0)) && D > 0.05 && r < 0.12 + 0.45 * D) {
-        // Ново строителство изисква свободен капацитет в мрежите (ток и вода).
-        t.prog = def.buildDays;
+      } else {
+        growth[k] = whyNot(def, hasRoad, pOk, wOk, D, 0.05);
+        if (ok && (!def.needsUtilities || (spareP > 0 && spareW > 0)) && D > 0.05 && r < 0.12 + 0.45 * D) {
+          // Ново строителство изисква свободен капацитет в мрежите (ток и вода) – и го запазва.
+          t.prog = def.buildDays;
+          spareP -= def.power[0] * 0.5;
+          spareW -= def.water[0] * 0.5;
+          delete growth[k];
+        }
       }
       continue;
     }
@@ -856,7 +884,7 @@ export function stepCity(input: CityInput): CityStepResult {
       expenses,
       net: totalIncome - totalExpenses,
     },
-    derived: { landValue, pollution: polOut, traffic, powered, watered, activity, levels },
+    derived: { landValue, pollution: polOut, traffic, powered, watered, activity, levels, growth },
     income,
     expenses,
     facilityStatus,

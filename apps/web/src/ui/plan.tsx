@@ -30,6 +30,8 @@ const tilesOf = (c: CityLike) => Object.values(c.tiles as TileMap);
 const count = (c: CityLike, f: (t: TileMap[string]) => boolean) => tilesOf(c).filter(f).length;
 const svc = (c: CityLike, ...s: string[]) => count(c, (t) => t.t === 'service' && s.includes(t.s));
 const zones = (c: CityLike, z: string) => count(c, (t) => t.t === 'zone' && t.z === z);
+/** Построени сгради (не само зонирани парцели). */
+const built = (c: CityLike, z: string) => count(c, (t) => t.t === 'zone' && t.z === z && t.lvl > 0 && !t.ab);
 const pop = (c: CityLike) => (c.stats as { population?: number } | undefined)?.population ?? 0;
 const popGoal = (n: number) => (c: CityLike) => ({ v: Math.min(1, pop(c) / n), label: `${num(pop(c))} / ${num(n)} жители` });
 
@@ -77,15 +79,18 @@ export const GOALS: Goal[] = [
     icon: '💼',
     title: 'Работни места',
     why: 'Жителите плащат данъци само ако работят. Търговията и индустрията дават работа – иначе безработицата расте и хората си тръгват.',
-    done: (c) => zones(c, 'C') >= 4 && zones(c, 'I') >= 4,
+    done: (c) => built(c, 'C') >= 3 && built(c, 'I') >= 3,
     progress: (c) => ({
-      v: Math.min(1, (Math.min(4, zones(c, 'C')) + Math.min(4, zones(c, 'I'))) / 8),
-      label: `търговия ${zones(c, 'C')}/4 · индустрия ${zones(c, 'I')}/4`,
+      v: Math.min(1, (Math.min(3, built(c, 'C')) + Math.min(3, built(c, 'I'))) / 6),
+      label: `построени: търговия ${built(c, 'C')}/3 · индустрия ${built(c, 'I')}/3`,
     }),
     tool: { kind: 'zone', zone: 'C' },
     button: 'Търговска зона',
-    pick: (c) =>
-      zones(c, 'C') < 4 ? { tool: { kind: 'zone', zone: 'C' }, button: 'Търговска зона' } : { tool: { kind: 'zone', zone: 'I' }, button: 'Индустриална зона' },
+    // зоната, която липсва; ако и двете ги има, но не се строят – тази с най-голямо търсене
+    pick: (c) => {
+      const z = zones(c, 'I') === 0 ? 'I' : zones(c, 'C') === 0 ? 'C' : bestJobZone(c).zone;
+      return { tool: { kind: 'zone', zone: z }, button: z === 'I' ? 'Индустриална зона' : z === 'C' ? 'Търговска зона' : 'Офисна зона' };
+    },
   },
   {
     id: 'school',
@@ -152,8 +157,8 @@ export const GOALS: Goal[] = [
     icon: '🏢',
     title: 'Офиси',
     why: 'Офисите плащат най-високите заплати (и данъци). Искат образовани хора, полиция и тротоари.',
-    done: (c) => zones(c, 'O') >= 4,
-    progress: (c) => ({ v: Math.min(1, zones(c, 'O') / 4), label: `${zones(c, 'O')} / 4 офисни парцела` }),
+    done: (c) => built(c, 'O') >= 2,
+    progress: (c) => ({ v: Math.min(1, built(c, 'O') / 2), label: `${built(c, 'O')} / 2 построени офиса` }),
     tool: { kind: 'zone', zone: 'O' },
     button: 'Офисна зона',
   },

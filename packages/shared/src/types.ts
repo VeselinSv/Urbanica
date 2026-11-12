@@ -93,7 +93,15 @@ export interface CityDerived {
   activity: Record<string, number>;
   /** По сграда: липсващи условия за следващото ниво (next) и за запазване на текущото (keep). */
   levels?: Record<string, { next: UpgradeRequirement[]; keep: UpgradeRequirement[] }>;
+  /**
+   * По празна или изоставена зона: защо там не започва строеж (празно – условията са изпълнени и строежът
+   * ще започне скоро). Само за зони без сграда.
+   */
+  growth?: Record<string, GrowthBlocker[]>;
 }
+
+/** Причина празна (или изоставена) зона да не се застроява. */
+export type GrowthBlocker = 'road' | 'power' | 'power_capacity' | 'water' | 'water_capacity' | 'demand';
 
 export interface CityStats {
   tick: number;

@@ -919,7 +919,7 @@ export class Traffic {
     sp.anchor.set(PED_ANCHOR.x, PED_ANCHOR.y);
     const kid = Math.random() < 0.12;
     // хората са малко по-едри, за да се виждат добре отблизо
-    sp.scale.set(PED_ANCHOR.scale * 1.3 * (kid ? 0.72 : 0.92 + Math.random() * 0.16));
+    sp.scale.set(PED_ANCHOR.scale * 1.02 * (kid ? 0.7 : 0.92 + Math.random() * 0.16));
     sp.alpha = 0;
     this.layer.addChild(sp);
     this.peds.push({
