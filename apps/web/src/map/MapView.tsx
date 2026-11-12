@@ -16,6 +16,18 @@ import {
 } from '@gce/shared';
 import { REAL_PLACES, getWorld } from '@gce/world-generation';
 import { IsoRenderer, toTile, type CityRender } from './renderer';
+import { Renderer3D } from '../map3d/Renderer3D';
+
+/** Рисувачът на картата: 2D (изометрични спрайтове) или 3D (Three.js) – с еднакви методи. */
+type MapRenderer = IsoRenderer | Renderer3D;
+
+function loadView3d(): boolean {
+  try {
+    return localStorage.getItem('gce_view') !== '2d';
+  } catch {
+    return true;
+  }
+}
 import { computeNeedBadges } from './needBadges';
 import { weatherFor, type DayMode } from './atmosphere';
 import { seasonOf } from './sprites';
@@ -110,7 +122,8 @@ function toolColor(tool: Tool): number {
 
 export function MapView() {
   const host = useRef<HTMLDivElement>(null);
-  const r = useRef<IsoRenderer | null>(null);
+  const r = useRef<MapRenderer | null>(null);
+  const [view3d, setView3d] = useState<boolean>(loadView3d);
   const region = useRef<RegionData>({ parcels: [], cities: [] });
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const [hoverPx, setHoverPx] = useState<{ x: number; y: number } | null>(null);
@@ -133,10 +146,10 @@ export function MapView() {
   const season = seasonOf(gameDate(tick).month);
   const weather = weatherFor(tick, season);
 
-  // Инициализация на Pixi.
+  // Инициализация на рисувача (3D или 2D).
   useEffect(() => {
     if (!host.current || !world) return;
-    const renderer = new IsoRenderer();
+    const renderer: MapRenderer = view3d ? new Renderer3D() : new IsoRenderer();
     let disposed = false;
     renderer.init(host.current).then(() => {
       if (disposed) {
@@ -149,7 +162,7 @@ export function MapView() {
       renderer.setIssues(getState().issues);
       renderer.setNeeds(needsRef.current);
       // Само в режим на разработка: достъп до камерата за визуални проверки от конзолата.
-      if (import.meta.env.DEV) (window as unknown as { __gceMap?: IsoRenderer }).__gceMap = renderer;
+      if (import.meta.env.DEV) (window as unknown as { __gceMap?: MapRenderer }).__gceMap = renderer;
       const c = getState().city;
       if (c) renderer.centerOn(c.originX, c.originY, 0.8);
       else renderer.fitCountry(false);
@@ -163,7 +176,7 @@ export function MapView() {
       renderer.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [world?.seed]);
+  }, [world?.seed, view3d]);
 
   const regionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   async function loadRegion() {
@@ -582,7 +595,7 @@ export function MapView() {
           <Splash text="Генериране на държавата…" />
         </div>
       )}
-      {!loading && <Minimap renderer={r} />}
+      {!loading && !view3d && <Minimap renderer={r as React.RefObject<IsoRenderer | null>} />}
       <div className="map-attrib">Релеф: AWS Terrain Tiles · Граници на областите: geoBoundaries (CC BY 4.0)</div>
       {city?.isOwner && (layer === 'power' || layer === 'water') && <UtilityLegend kind={layer} />}
       <button
@@ -602,6 +615,34 @@ export function MapView() {
         <span>{SEASON_LABEL[season]}</span>
         {WEATHER_LABEL[weather] && <span>{WEATHER_LABEL[weather]}</span>}
       </button>
+      <div className="map-view-switch">
+        <button
+          className={view3d ? 'active' : ''}
+          title={view3d ? 'Превключи към 2D изглед' : 'Превключи към 3D изглед'}
+          onClick={() => {
+            const next = !view3d;
+            try {
+              localStorage.setItem('gce_view', next ? '3d' : '2d');
+            } catch {
+              /* без запис */
+            }
+            setLoading(true);
+            setView3d(next);
+          }}
+        >
+          {view3d ? '3D' : '2D'}
+        </button>
+        {view3d && (
+          <>
+            <button title="Завърти наляво (Q)" onClick={() => (r.current as Renderer3D | null)?.rotate?.(-Math.PI / 8)}>
+              ⟲
+            </button>
+            <button title="Завърти надясно (E)" onClick={() => (r.current as Renderer3D | null)?.rotate?.(Math.PI / 8)}>
+              ⟳
+            </button>
+          </>
+        )}
+      </div>
       <div className="map-zoom">
         <button
           aria-label="Приближи"

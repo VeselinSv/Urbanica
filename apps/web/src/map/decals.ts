@@ -272,12 +272,26 @@ function fallenTree(g: Ctx, cx: number, cy: number, seed: number) {
 
 const cache = new Map<string, Texture>();
 
-/** Текстура на следата на сигнала; anchor (0.5, 0.5) е центърът на плочката. */
+const canvases = new Map<string, HTMLCanvasElement | null>();
+
+/** Текстура на следата на сигнала (Pixi); anchor (0.5, 0.5) е центърът на плочката. */
 export function decalTexture(kind: string, severity: number, seed: number, wet: boolean): Texture | null {
   const v = Math.abs(seed) % 4;
   const id = `${kind}:${severity}:${v}:${wet ? 1 : 0}`;
   const hit = cache.get(id);
   if (hit) return hit;
+  const c = decalCanvas(kind, severity, seed, wet);
+  if (!c) return null;
+  const tex = Texture.from(c);
+  cache.set(id, tex);
+  return tex;
+}
+
+/** Платното със следата (2x) – за 2D текстурата и за 3D „стикер“ върху пътя. */
+export function decalCanvas(kind: string, severity: number, seed: number, wet: boolean): HTMLCanvasElement | null {
+  const v = Math.abs(seed) % 4;
+  const id = `${kind}:${severity}:${v}:${wet ? 1 : 0}`;
+  if (canvases.has(id)) return canvases.get(id)!;
   const c = newCanvas();
   c.width = W * RES;
   c.height = H * RES;
@@ -336,11 +350,11 @@ export function decalTexture(kind: string, severity: number, seed: number, wet: 
       break;
     }
     default:
+      canvases.set(id, null);
       return null;
   }
-  const tex = Texture.from(c);
-  cache.set(id, tex);
-  return tex;
+  canvases.set(id, c);
+  return c;
 }
 
 export const DECAL_W = W;
