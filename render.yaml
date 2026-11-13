@@ -1,5 +1,5 @@
 # Render Blueprint – БЕЗПЛАТЕН вариант: една уеб услуга (API + клиент + симулацията в същия процес).
-# Базата е външна и безплатна (Neon – не изтича): при създаването Render пита за DATABASE_URL.
+# Базата е външна и безплатна (Aiven Free PostgreSQL – не изтича): при създаването Render пита за DATABASE_URL.
 # Разполагане: Render -> New -> Blueprint -> това хранилище. Подробно: docs/deployment/README.md.
 services:
   - type: web
@@ -12,11 +12,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      # адресът на базата от Neon (pooled, с ?sslmode=require) – въвежда се в Render, не в Git
+      # адресът на базата (Aiven Free PostgreSQL – Service URI, с ?sslmode=require) – въвежда се в Render, не в Git.
+      # Броят връзки (connection_limit=10) се добавя автоматично. По желание: DATABASE_URL_UNPOOLED – отделен
+      # адрес само за миграциите (нужен при база с пул на връзките, напр. Neon).
       - key: DATABASE_URL
-        sync: false
-      # директната връзка от Neon (без -pooler) – за миграциите при стартиране
-      - key: DATABASE_URL_UNPOOLED
         sync: false
       - key: WORLD_SEED
         value: gce-alpha-1

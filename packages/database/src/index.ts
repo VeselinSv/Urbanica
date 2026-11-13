@@ -5,10 +5,23 @@ export type * from '@prisma/client';
 
 let client: PrismaClient | null = null;
 
+/**
+ * Адресът на базата с разумен брой връзки по подразбиране: безплатните бази (напр. Aiven) допускат
+ * малко връзки, а Prisma иначе отваря по 2 на всяко ядро на хоста. Изрично зададеният параметър се запазва.
+ */
+export function databaseUrl(raw = process.env.DATABASE_URL): string | undefined {
+  if (!raw || /[?&]connection_limit=/.test(raw)) return raw;
+  return `${raw}${raw.includes('?') ? '&' : '?'}connection_limit=${process.env.DB_CONNECTION_LIMIT ?? 10}`;
+}
+
 /** Единствена инстанция на Prisma клиента за процеса. */
 export function getPrisma(): PrismaClient {
   if (!client) {
-    client = new PrismaClient({ log: process.env.PRISMA_LOG === '1' ? ['query', 'warn', 'error'] : ['warn', 'error'] });
+    const url = databaseUrl();
+    client = new PrismaClient({
+      log: process.env.PRISMA_LOG === '1' ? ['query', 'warn', 'error'] : ['warn', 'error'],
+      ...(url ? { datasources: { db: { url } } } : {}),
+    });
   }
   return client;
 }
