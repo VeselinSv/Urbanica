@@ -15,6 +15,7 @@ import { facilityLoad, stepCity, stepCityDays, type CityContext, type CityStepRe
 import { Prisma, withTx, type PrismaClient } from '@gce/database';
 import { SYS, acc, transfer, tryTransfer } from './ledger';
 import { compactHistory } from './maintenance';
+import { forgetCity, loadCityHeavy, rememberCity } from './cityCache';
 import { refPrices, territoryKeys, worldGen, worldRow } from './world';
 import { addGoods, storageCapacity, storageUsed, tryTakeGoods } from './inventory';
 import { companyTechs, processLicenses, processResearch } from './research';
@@ -81,11 +82,21 @@ export async function processCity(
 ): Promise<'done' | 'skipped'> {
   const gen = await worldGen(prisma);
   for (let attempt = 0; attempt < 4; attempt++) {
-    const city = await prisma.city.findUnique({ where: { id: cityId }, include: { parcels: true } });
-    if (!city) return 'skipped';
-    const days = tick - city.lastTick;
+    // малкият ред (версия, политики, бюджетни флагове) – всеки път; плочките и населението – от кеша при същата версия
+    const head = await prisma.city.findUnique({
+      where: { id: cityId },
+      select: { name: true, ownerId: true, version: true, lastTick: true, deficitDays: true, receivership: true, retailSatisfaction: true, policy: true },
+    });
+    if (!head) {
+      forgetCity(cityId);
+      return 'skipped';
+    }
+    const days = tick - head.lastTick;
     if (days <= 0) return 'skipped';
     if (!active && days < BALANCE.sim.inactiveBatch) return 'skipped';
+    const heavy = await loadCityHeavy(prisma, cityId, head.version);
+    if (!heavy) continue;
+    const city = { ...head, ...heavy };
     const facilities = await prisma.facility.findMany({ where: { cityId } });
     const techCache = new Map<string, Awaited<ReturnType<typeof companyTechs>>>();
     const loads = [];
@@ -212,7 +223,11 @@ export async function processCity(
       await publish(tx, { type: 'city', cityId, ownerId: city.ownerId });
       return true;
     });
-    if (ok) return 'done';
+    if (ok) {
+      // новата версия на реда е точно тази, която току-що записахме
+      rememberCity(cityId, { version: city.version + 1, tiles: r.tiles, pop: r.pop, parcels: city.parcels });
+      return 'done';
+    }
   }
   return 'skipped';
 }

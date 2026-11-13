@@ -21,6 +21,7 @@ import { SYS, acc, ensureAccount, transfer } from './ledger';
 import { idempotent } from './idempotency';
 import { currentTick, territoryKeys, worldGen } from './world';
 import { logEvent, notify } from './events';
+import { loadCityHeavy } from './cityCache';
 
 export function defaultPolicy(): CityPolicy {
   return {
@@ -542,8 +543,31 @@ export async function setPolicy(prisma: PrismaClient, userId: string, cityId: st
 
 /** Публичен или пълен изглед на града според правата на зрителя. */
 export async function getCity(prisma: PrismaClient, cityId: string, viewerId: string | null) {
-  const city = await prisma.city.findUnique({ where: { id: cityId }, include: { parcels: true, owner: { select: { username: true } } } });
-  if (!city) throw notFound('Градът');
+  // без тежките колони (плочки, население, слоеве) – те идват от кеша в паметта при същата версия
+  const head = await prisma.city.findUnique({
+    where: { id: cityId },
+    select: {
+      id: true,
+      name: true,
+      ownerId: true,
+      originX: true,
+      originY: true,
+      foundedTick: true,
+      policy: true,
+      stats: true,
+      version: true,
+      receivership: true,
+      deficitDays: true,
+      lastTick: true,
+      owner: { select: { username: true } },
+    },
+  });
+  if (!head) throw notFound('Градът');
+  let heavy = await loadCityHeavy(prisma, cityId, head.version);
+  // градът е сменен точно между двете четения – още един опит с прясна версия
+  if (!heavy) heavy = await loadCityHeavy(prisma, cityId, (await prisma.city.findUnique({ where: { id: cityId }, select: { version: true } }))?.version ?? -1);
+  if (!heavy) throw notFound('Градът');
+  const city = { ...head, ...heavy };
   const isOwner = viewerId === city.ownerId;
   const stats = city.stats as Record<string, unknown>;
   const base = {
@@ -600,13 +624,14 @@ export async function region(prisma: PrismaClient, x0: number, y0: number, x1: n
   const cityIds = [...new Set(parcels.map((p) => p.cityId))];
   const cities = await prisma.city.findMany({
     where: { id: { in: cityIds } },
-    select: { id: true, name: true, ownerId: true, originX: true, originY: true, tiles: true, owner: { select: { username: true } } },
+    select: { id: true, name: true, ownerId: true, originX: true, originY: true, version: true, owner: { select: { username: true } } },
   });
+  const heavy = await Promise.all(cities.map((c) => loadCityHeavy(prisma, c.id, c.version)));
   return {
     parcels,
-    cities: cities.map((c) => {
+    cities: cities.map((c, i) => {
       const tiles: Record<string, TileState> = {};
-      for (const [k, v] of Object.entries(c.tiles as unknown as TileMap)) {
+      for (const [k, v] of Object.entries((heavy[i]?.tiles ?? {}) as TileMap)) {
         const [x, y] = parseKey(k);
         if (x >= x0 && x <= x1 && y >= y0 && y <= y1) tiles[k] = v;
       }
