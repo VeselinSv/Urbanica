@@ -103,6 +103,20 @@ export interface CityDerived {
 /** Причина празна (или изоставена) зона да не се застроява. */
 export type GrowthBlocker = 'road' | 'power' | 'power_capacity' | 'water' | 'water_capacity' | 'demand';
 
+export type MoodFactor =
+  | 'jobs'
+  | 'wages'
+  | 'prices'
+  | 'rent'
+  | 'services'
+  | 'parks'
+  | 'budget'
+  | 'taxes'
+  | 'utilities'
+  | 'commute'
+  | 'pollution'
+  | 'issues';
+
 export interface CityStats {
   tick: number;
   population: number;
@@ -123,6 +137,10 @@ export interface CityStats {
   traffic: { congestion: number; commuteMinutes: number };
   pollutionAvg: number;
   happiness: number;
+  /** Към каква стойност клони удовлетвореността при сегашното положение (0..1). */
+  happinessTarget?: number;
+  /** Приносът на всеки фактор към удовлетвореността (+ повдига, − сваля; база 0.55). */
+  mood?: Partial<Record<MoodFactor, number>>;
   attractiveness: number;
   landValueAvg: number;
   buildings: Record<ZoneType, number>;

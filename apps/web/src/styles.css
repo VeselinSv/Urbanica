@@ -1883,3 +1883,52 @@ button.avatar:hover {
 .utility-legend .bad {
   color: #fca5a5;
 }
+
+/* Какво влияе на удовлетвореността */
+.mood {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.mood li {
+  display: grid;
+  grid-template-columns: 1fr 64px 34px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.mood-label small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+.mood-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.18);
+  overflow: hidden;
+}
+.mood-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+.mood li.good .mood-bar i {
+  background: var(--good);
+}
+.mood li.bad .mood-bar i {
+  background: var(--bad);
+}
+.mood li b {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.mood li.good b {
+  color: var(--good);
+}
+.mood li.bad b {
+  color: var(--bad);
+}

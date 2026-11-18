@@ -13,6 +13,7 @@ import {
   type CityPolicy,
   type FacilityType,
   type GrowthBlocker,
+  type MoodFactor,
   type TileMap,
   type UpgradeRequirement,
   type ZoneType,
@@ -82,6 +83,7 @@ export function CityPanel() {
         <Stat label="БВП/ден" value={money(s.gdp ?? 0)} />
         <Stat label="Ср. стойност на земята" value={(s.landValueAvg ?? 0).toFixed(2)} />
       </div>
+      <MoodBreakdown mood={s.mood} happiness={s.happiness ?? 0} target={s.happinessTarget} />
       <Section title="Търсене по зони">
         <div className="demands">
           {ZONE_TYPES.map((z) => (
@@ -122,6 +124,64 @@ export function CityPanel() {
       {cities.length < 5 && <FoundCity />}
       <ResetGame />
     </div>
+  );
+}
+
+/** Какво влияе на удовлетвореността: име, какво я вдига/сваля и какво може да направи кметът. */
+const MOOD_INFO: Record<MoodFactor, { label: string; up: string; down: string }> = {
+  jobs: { label: 'Работа', up: 'почти всички имат работа', down: 'безработица – зонирайте индустрия, търговия и офиси' },
+  wages: { label: 'Заплати', up: 'заплатите растат по-бързо от цените', down: 'заплатите изостават от цените – нужни са повече работни места' },
+  prices: { label: 'Цени и магазини', up: 'храната е евтина', down: 'скъпа храна или празни магазини – търговия и производство на стоки' },
+  rent: { label: 'Наеми и жилища', up: '', down: 'високи наеми или препълнени жилища – зонирайте още жилища' },
+  services: { label: 'Училища, болници, полиция', up: 'добро покритие с услуги', down: 'липсват услуги' },
+  parks: { label: 'Паркове', up: 'хората имат паркове наблизо', down: '' },
+  budget: { label: 'Бюджет на услугите', up: 'услугите се финансират щедро', down: 'орязан бюджет или принудително оздравяване' },
+  taxes: { label: 'Данъци и тарифи', up: 'ниски данъци', down: 'високи данъци на доходите/имотите или скъп ток' },
+  utilities: { label: 'Ток и вода', up: '', down: 'домове без ток или вода' },
+  commute: { label: 'Път до работа', up: 'добър обществен транспорт', down: 'задръствания или дълъг път – широки пътища, кръгови, автобуси' },
+  pollution: { label: 'Замърсяване', up: '', down: 'замърсяване – отдалечете индустрията, паркове' },
+  issues: { label: 'Сигнали на гражданите', up: '', down: 'нерешени сигнали (дупки, аварии…) – ремонтирайте ги' },
+};
+
+function MoodBreakdown({ mood, happiness, target }: { mood?: Partial<Record<MoodFactor, number>>; happiness: number; target?: number }) {
+  if (!mood) return null;
+  const rows = (Object.entries(mood) as [MoodFactor, number][]).filter(([, v]) => Math.abs(v) >= 0.005).sort((a, b) => a[1] - b[1]);
+  const trend = target === undefined ? 0 : target - happiness;
+  return (
+    <Section title="Какво влияе на удовлетвореността">
+      <p className="small muted">
+        Сега {pct(happiness, 0)}
+        {target !== undefined && Math.abs(trend) >= 0.01 && (
+          <>
+            {' '}
+            · {trend > 0 ? '▲ расте' : '▼ пада'} към {pct(target, 0)}
+          </>
+        )}
+        . Основа 55% плюс факторите по-долу (най-тежките – отгоре).
+      </p>
+      <ul className="mood">
+        {rows.map(([k, v]) => {
+          const info = MOOD_INFO[k];
+          const why = v < 0 ? info.down : info.up;
+          return (
+            <li key={k} className={v < 0 ? 'bad' : 'good'}>
+              <span className="mood-label">
+                {info.label}
+                {why && <small>{why}</small>}
+              </span>
+              <span className="mood-bar">
+                <i style={{ width: `${Math.min(100, (Math.abs(v) / 0.2) * 100)}%` }} />
+              </span>
+              <b>
+                {v > 0 ? '+' : '−'}
+                {Math.round(Math.abs(v) * 100)}
+              </b>
+            </li>
+          );
+        })}
+        {!rows.length && <li className="muted">Нищо особено не влияе в момента.</li>}
+      </ul>
+    </Section>
   );
 }
 

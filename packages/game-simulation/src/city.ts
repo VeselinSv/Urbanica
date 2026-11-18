@@ -15,6 +15,7 @@ import {
   type CityDerived,
   type CityPolicy,
   type CityStats,
+  type MoodFactor,
   type FacilityLoad,
   type PopulationState,
   type ServiceType,
@@ -477,22 +478,32 @@ export function stepCity(input: CityInput): CityStepResult {
   const avgWage = workforce > 0 ? totalPayroll / Math.max(1, employedTotal) : pop.wages[0];
   // наемът е за целия блок (POP пъти повече хора) – сравнява се с една заплата на човек
   const rentBurden = (landValueAvg * BALANCE.landValue.base * BALANCE.consumption.rentYield) / 360 / POP / Math.max(1, avgWage);
-  let h = 0.55;
-  h += 0.18 * clamp((1 - unemploymentRate - 0.85) / 0.15, -1, 1);
-  h += 0.1 * eduSvc + 0.1 * healthSvc + 0.05 * safetySvc + 0.03 * fireSvc + 0.03 * transitSvc;
-  h -= 0.012 * polAvg;
-  h -= (T.income - D0.income) * 1.2;
-  h -= 0.15 * (1 - powerRatio.zones) + 0.15 * (1 - waterRatio.zones);
-  h -= 0.08 * clamp(congestion - 1, 0, 1);
-  h -= 0.1 * (1 - ctx.retailSatisfaction);
-  h -= 0.08 * clamp(rentBurden - 0.3, 0, 1);
-  h -= 0.04 * clamp(policy.powerTariff / U.defaultPowerTariff - 1, 0, 2);
-  // Нерешените сигнали дразнят гражданите.
-  h -= Math.min(
-    0.2,
-    openIssues.reduce((a, i) => a + (ISSUE_TYPES[i.kind]?.effects.happiness ?? 0) * i.severity, 0),
-  );
-  h = clamp(h, 0, 1);
+  // Удовлетвореността е сбор от фактори – ситуацията в града и икономиката му. Всеки фактор се пази
+  // отделно (stats.mood), за да може играчът да види защо гражданите са доволни или не.
+  const wageBase = BALANCE.wages.base[0] + BALANCE.wages.base[1] + BALANCE.wages.base[2];
+  // реална заплата: заплатите в града спрямо нормалните, коригирани с ценовото равнище в света
+  const realWage = (pop.wages[0] + pop.wages[1] + pop.wages[2]) / wageBase / Math.max(0.3, ctx.priceIndex);
+  const occupancy = housingCap > 0 ? totalPop / housingCap : 0;
+  const mood: Record<MoodFactor, number> = {
+    jobs: 0.18 * clamp((1 - unemploymentRate - 0.85) / 0.15, -1, 1),
+    wages: 0.1 * clamp((realWage - 1) / 0.3, -1, 1),
+    prices: -0.06 * clamp((ctx.foodPriceRatio - 1) / 0.5, -0.5, 1) - 0.1 * (1 - ctx.retailSatisfaction),
+    rent: -0.08 * clamp(rentBurden - 0.3, 0, 1) - 0.1 * clamp(occupancy - 0.95, 0, 0.6),
+    services: 0.1 * eduSvc + 0.1 * healthSvc + 0.05 * safetySvc + 0.03 * fireSvc,
+    parks: 0.06 * avgCov('park'),
+    budget: 0.06 * clamp(budget - 1, -0.75, 0.5) - (ctx.receivership ? 0.06 : 0),
+    taxes: -(T.income - D0.income) * 1.2 - (T.property - D0.property) * 0.6 - 0.04 * clamp(policy.powerTariff / U.defaultPowerTariff - 1, 0, 2),
+    utilities: -0.15 * (1 - powerRatio.zones) - 0.15 * (1 - waterRatio.zones),
+    commute: 0.03 * transitSvc - 0.08 * clamp(congestion - 1, 0, 1) - 0.05 * clamp((commuteMinutes - 25) / 35, 0, 1),
+    pollution: -0.012 * polAvg,
+    // нерешените сигнали дразнят гражданите
+    issues: -Math.min(
+      0.2,
+      openIssues.reduce((a, i) => a + (ISSUE_TYPES[i.kind]?.effects.happiness ?? 0) * i.severity, 0),
+    ),
+  };
+  for (const k of Object.keys(mood) as MoodFactor[]) mood[k] = Math.round(mood[k] * 1000) / 1000;
+  const h = clamp(0.55 + Object.values(mood).reduce((a, b) => a + b, 0), 0, 1);
   pop.happiness = Math.round((pop.happiness * 0.8 + h * 0.2) * 1000) / 1000;
   const vacancyPull = clamp((vacancies - unemployed) / Math.max(50 * POP, workforce), -1, 1);
   const attractiveness = clamp(pop.happiness * 0.7 + 0.3 * (0.5 + vacancyPull / 2), 0, 1);
@@ -873,6 +884,9 @@ export function stepCity(input: CityInput): CityStepResult {
       traffic: { congestion: Math.round(congestion * 100) / 100, commuteMinutes },
       pollutionAvg: Math.round(polAvg * 100) / 100,
       happiness: pop.happiness,
+      /** към какво клони удовлетвореността (тя се приближава към него с ~20% на ден) */
+      happinessTarget: Math.round(h * 1000) / 1000,
+      mood,
       attractiveness: Math.round(attractiveness * 1000) / 1000,
       landValueAvg: Math.round(landValueAvg * 100) / 100,
       buildings,

@@ -87,11 +87,25 @@ function TopBar() {
           <b>{num(s?.population ?? 0)}</b>
           <small>{pct(1 - (s?.unemploymentRate ?? 0), 0)} заети</small>
         </span>
-        <span className="pill mood" title="Удовлетвореност на гражданите">
+        <span
+          className="pill mood"
+          role="button"
+          tabIndex={0}
+          style={{ cursor: 'pointer' }}
+          title="Удовлетвореност на гражданите – щракнете, за да видите какво ѝ влияе"
+          onClick={() => setState({ panel: 'city', panelOpen: true })}
+        >
           <span className="emoji">{mood(s?.happiness ?? 0.5)}</span>
           <span>
             <em>Настроение</em>
-            <b>{pct(s?.happiness ?? 0, 0)}</b>
+            <b>
+              {pct(s?.happiness ?? 0, 0)}
+              {s?.happinessTarget !== undefined && Math.abs(s.happinessTarget - (s.happiness ?? 0)) >= 0.01 && (
+                <small style={{ marginLeft: 4, color: s.happinessTarget > (s.happiness ?? 0) ? 'var(--good)' : 'var(--bad)' }}>
+                  {s.happinessTarget > (s.happiness ?? 0) ? '▲' : '▼'}
+                </small>
+              )}
+            </b>
           </span>
         </span>
         <span
