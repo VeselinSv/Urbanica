@@ -317,29 +317,36 @@ describe('Граница между градове', () => {
     const other = await foundCity(prisma, b.id, 'Съседен');
     const S = BALANCE.world.parcelSize;
     const parcels = await prisma.parcel.findMany({ where: { cityId: city.id } });
-    const maxPx = Math.max(...parcels.map((p) => p.px));
+    const minPx = Math.min(...parcels.map((p) => p.px));
     const minPy = Math.min(...parcels.map((p) => p.py));
-    // ред от 20 строителни плочки до източния край на територията (в който и да е парцелен ред)
     const gen = await worldGen(prisma);
-    const east = (maxPx + 1) * S - 1;
-    const minY = minPy * S;
-    let row = -1;
-    for (let y = minY; y < minY + 3 * S && row < 0; y++) {
-      let ok = true;
-      for (let x = east - 19; x <= east; x++) if (!gen.buildable(x, y)) ok = false;
-      if (ok) row = y;
-    }
-    expect(row).toBeGreaterThanOrEqual(0);
-    // съседът получава парцел точно до източната граница, срещу този ред
-    const npy = Math.floor(row / S);
-    await prisma.parcel.deleteMany({ where: { px: maxPx + 1, py: npy } });
-    await prisma.parcel.create({ data: { px: maxPx + 1, py: npy, cityId: other.id } });
+    // права от 20 строителни плочки, която стига до един от четирите края на територията (терена е случаен –
+    // реки и национални пътища), и парцел на съседа точно срещу нея
+    const x0 = minPx * S;
+    const y0 = minPy * S;
+    const N = 3 * S;
+    type Edge = { line: (i: number, k: number) => { x: number; y: number }; parcel: (i: number) => { px: number; py: number } };
+    const edges: Edge[] = [
+      { line: (i, k) => ({ x: x0 + N - 1 - k, y: y0 + i }), parcel: (i) => ({ px: minPx + 3, py: Math.floor((y0 + i) / S) }) },
+      { line: (i, k) => ({ x: x0 + k, y: y0 + i }), parcel: (i) => ({ px: minPx - 1, py: Math.floor((y0 + i) / S) }) },
+      { line: (i, k) => ({ x: x0 + i, y: y0 + N - 1 - k }), parcel: (i) => ({ px: Math.floor((x0 + i) / S), py: minPy + 3 }) },
+      { line: (i, k) => ({ x: x0 + i, y: y0 + k }), parcel: (i) => ({ px: Math.floor((x0 + i) / S), py: minPy - 1 }) },
+    ];
+    let pick: { tiles: { x: number; y: number }[]; parcel: { px: number; py: number } } | null = null;
+    for (const e of edges)
+      for (let i = 0; i < N && !pick; i++) {
+        const tiles = Array.from({ length: 20 }, (_, k) => e.line(i, k));
+        if (tiles.every((t) => gen.buildable(t.x, t.y) && !(t.x === free[0].x && t.y === free[0].y))) pick = { tiles, parcel: e.parcel(i) };
+      }
+    expect(pick).not.toBeNull();
+    const { tiles, parcel } = pick!;
+    await prisma.parcel.deleteMany({ where: parcel });
+    await prisma.parcel.create({ data: { ...parcel, cityId: other.id } });
     await expect(build(prisma, a.id, city.id, { action: 'zone', zone: 'R', tiles: [free[0]] })).rejects.toThrow(/магистрала/);
-    const short = Array.from({ length: 10 }, (_, i) => ({ x: east - i, y: row }));
-    await build(prisma, a.id, city.id, { action: 'road', roadClass: 'highway', tiles: short });
+    // първите 10 плочки от границата навътре – още не стига
+    await build(prisma, a.id, city.id, { action: 'road', roadClass: 'highway', tiles: tiles.slice(0, 10) });
     await expect(build(prisma, a.id, city.id, { action: 'zone', zone: 'R', tiles: [free[0]] })).rejects.toThrow(/сега: 10/);
-    const rest = Array.from({ length: 10 }, (_, i) => ({ x: east - 10 - i, y: row }));
-    await build(prisma, a.id, city.id, { action: 'road', roadClass: 'highway', tiles: rest });
+    await build(prisma, a.id, city.id, { action: 'road', roadClass: 'highway', tiles: tiles.slice(10) });
     const r = await build(prisma, a.id, city.id, { action: 'zone', zone: 'R', tiles: [free[0]] });
     expect(r.applied).toBe(1);
     void ox;
