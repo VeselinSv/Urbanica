@@ -17,7 +17,7 @@ import { DomainError, bad, conflict, forbidden, notFound } from './errors';
 import { SYS, acc, ensureAccount, transfer } from './ledger';
 import { idempotent } from './idempotency';
 import { currentTick, refPrices, territoryKeys, worldGen } from './world';
-import { lockCity } from './cities';
+import { lockCity, roadNext } from './cities';
 import { logEvent } from './events';
 import { tryTakeGoods } from './inventory';
 
@@ -114,6 +114,7 @@ export async function buildFacility(
         if (tiles[k]) throw bad('Плочката е заета');
         const placement = gen.satisfiesPlacement(def.placement, input.x, input.y);
         if (!placement.ok) throw bad(placement.reason ?? 'Неподходящо място');
+        if (!roadNext(tiles, input.x, input.y)) throw bad('Предприятието трябва да е точно до път (за ток, вода и работници) – първо постройте път до плочката');
         const mult = gen.roadCostMult(input.x, input.y);
         const cost = Math.round(def.cost * (Number.isFinite(mult) ? Math.min(mult, 2) : 2));
         const tick = await currentTick(tx);

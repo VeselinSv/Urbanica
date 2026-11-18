@@ -75,8 +75,8 @@ export async function createBot(prisma: PrismaClient, name: string, opts: { comp
     for (let y = 0; y < size && !placed; y++)
       for (let x = 0; x < size && !placed; x++) {
         if (!free(x, y)) continue;
-        // Близо до път (разстояние ≤ 2), за да получи ток и работници.
-        const nearRoad = road.some((r) => Math.abs(r.x - (ox + x)) + Math.abs(r.y - (oy + y)) <= 2);
+        // Точно до път, за да получи ток и работници.
+        const nearRoad = road.some((r) => Math.abs(r.x - (ox + x)) + Math.abs(r.y - (oy + y)) <= BALANCE.construction.roadAccess);
         if (!nearRoad) continue;
         if (!gen.satisfiesPlacement(def.placement, ox + x, oy + y).ok) continue;
         try {

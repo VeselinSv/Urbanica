@@ -75,7 +75,9 @@ export async function cityWithRoad(userId: string) {
   for (let x = 0; x < 24; x++) if (gen.buildable(ox + x, oy + 10)) road.push({ x: ox + x, y: oy + 10 });
   await build(prisma, userId, city.id, { action: 'road', tiles: road });
   const free: { x: number; y: number }[] = [];
-  for (let x = 0; x < 24; x++) for (const dy of [9, 11]) if (gen.buildable(ox + x, oy + dy)) free.push({ x: ox + x, y: oy + dy });
+  // само плочки, до които наистина има път (строи се точно до пътя)
+  const onRoad = new Set(road.map((t) => t.x));
+  for (let x = 0; x < 24; x++) for (const dy of [9, 11]) if (gen.buildable(ox + x, oy + dy) && onRoad.has(ox + x)) free.push({ x: ox + x, y: oy + dy });
   return { city, ox, oy, free, road, key: (x: number, y: number) => tileKey(x, y) };
 }
 

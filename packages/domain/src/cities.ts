@@ -161,6 +161,14 @@ export async function foundCity(prisma: PrismaClient, userId: string, name: stri
   }
 }
 
+/** Има ли път непосредствено до плочката (BALANCE.construction.roadAccess, по Манхатън). */
+export function roadNext(tiles: TileMap, x: number, y: number): boolean {
+  const R = BALANCE.construction.roadAccess;
+  for (let dy = -R; dy <= R; dy++)
+    for (let dx = -R; dx <= R; dx++) if ((dx || dy) && Math.abs(dx) + Math.abs(dy) <= R && tiles[tileKey(x + dx, y + dy)]?.t === 'road') return true;
+  return false;
+}
+
 function buildCost(gen: Awaited<ReturnType<typeof worldGen>>, x: number, y: number, base: number): number {
   const m = gen.roadCostMult(x, y);
   return Number.isFinite(m) ? Math.round(base * m) : Infinity;
@@ -360,6 +368,10 @@ export async function build(prisma: PrismaClient, userId: string, cityId: string
           case 'service': {
             if (cur) {
               reasons.add('Плочката е заета');
+              continue;
+            }
+            if (!roadNext(tiles, x, y)) {
+              reasons.add('Обществените сгради се строят точно до път – първо постройте път до плочката');
               continue;
             }
             const def = SERVICES[input.service];

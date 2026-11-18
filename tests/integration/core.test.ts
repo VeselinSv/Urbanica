@@ -319,20 +319,22 @@ describe('Граница между градове', () => {
     const parcels = await prisma.parcel.findMany({ where: { cityId: city.id } });
     const maxPx = Math.max(...parcels.map((p) => p.px));
     const minPy = Math.min(...parcels.map((p) => p.py));
-    // съседът получава парцел точно до източната граница на града
-    await prisma.parcel.deleteMany({ where: { px: maxPx + 1, py: minPy } });
-    await prisma.parcel.create({ data: { px: maxPx + 1, py: minPy, cityId: other.id } });
-    await expect(build(prisma, a.id, city.id, { action: 'zone', zone: 'R', tiles: [free[0]] })).rejects.toThrow(/магистрала/);
-    // магистрала от 20 плочки по ред в първия парцелен ред, стигаща до източния край на територията
+    // ред от 20 строителни плочки до източния край на територията (в който и да е парцелен ред)
     const gen = await worldGen(prisma);
     const east = (maxPx + 1) * S - 1;
+    const minY = minPy * S;
     let row = -1;
-    for (let y = minPy * S; y < (minPy + 1) * S && row < 0; y++) {
+    for (let y = minY; y < minY + 3 * S && row < 0; y++) {
       let ok = true;
       for (let x = east - 19; x <= east; x++) if (!gen.buildable(x, y)) ok = false;
       if (ok) row = y;
     }
     expect(row).toBeGreaterThanOrEqual(0);
+    // съседът получава парцел точно до източната граница, срещу този ред
+    const npy = Math.floor(row / S);
+    await prisma.parcel.deleteMany({ where: { px: maxPx + 1, py: npy } });
+    await prisma.parcel.create({ data: { px: maxPx + 1, py: npy, cityId: other.id } });
+    await expect(build(prisma, a.id, city.id, { action: 'zone', zone: 'R', tiles: [free[0]] })).rejects.toThrow(/магистрала/);
     const short = Array.from({ length: 10 }, (_, i) => ({ x: east - i, y: row }));
     await build(prisma, a.id, city.id, { action: 'road', roadClass: 'highway', tiles: short });
     await expect(build(prisma, a.id, city.id, { action: 'zone', zone: 'R', tiles: [free[0]] })).rejects.toThrow(/сега: 10/);
