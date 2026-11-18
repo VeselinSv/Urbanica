@@ -114,10 +114,10 @@ export function toolNeeds(tool: Tool, city: CityDetail | null): { needs: NeedIte
   const hasRoad = vals.some((t) => t.t === 'road');
   const power = svcCount(tiles, 'power_coal', 'power_wind') > 0 || vals.some((t) => t.t === 'facility' && (t.f === 'coal_power' || t.f === 'solar_farm'));
   const water = svcCount(tiles, 'water_pump') > 0;
-  const road: NeedItem = { label: 'Път (до 2 плочки)', ok: hasRoad, fix: { kind: 'road', cls: 'street' }, fixLabel: 'Строй път' };
+  const road: NeedItem = { label: 'Път до парцела', ok: hasRoad, fix: { kind: 'road', cls: 'street' }, fixLabel: 'Строй път' };
   switch (tool.kind) {
     case 'road':
-      return { needs: [], unlocks: 'Всичко се строи до път: зони и обществени сгради на до 2 плочки. Улиците и булевардите имат тротоари.' };
+      return { needs: [], unlocks: 'Всичко се строи до път: зони и обществени сгради точно до пътя. Улиците и булевардите имат тротоари.' };
     case 'sidewalk':
       return {
         needs: [{ label: 'Път или празна земя', ok: hasRoad }],

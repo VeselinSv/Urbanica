@@ -22,6 +22,7 @@ import { idempotent } from './idempotency';
 import { currentTick, territoryKeys, worldGen } from './world';
 import { logEvent, notify } from './events';
 import { loadCityHeavy } from './cityCache';
+import { BORDER_HIGHWAY_MIN, borderStatus } from './border';
 
 export function defaultPolicy(): CityPolicy {
   return {
@@ -59,11 +60,10 @@ async function findSpot(prisma: PrismaClient | Tx, userId: string, hint?: { x: n
   const ok = (px0: number, py0: number) => {
     if (px0 < 1 || py0 < 1 || px0 + n >= maxP - 1 || py0 + n >= maxP - 1) return false;
     let land = 0;
-    for (let j = 0; j < n; j++)
-      for (let i = 0; i < n; i++) {
-        if (owned.has(`${px0 + i},${py0 + j}`)) return false;
-        land += gen.parcelProfile(px0 + i, py0 + j).land;
-      }
+    // поне един свободен парцел около новия град – градовете се допират само когато някой се разрасне
+    // (тогава важи правилото за магистралата до границата)
+    for (let j = -1; j <= n; j++) for (let i = -1; i <= n; i++) if (owned.has(`${px0 + i},${py0 + j}`)) return false;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) land += gen.parcelProfile(px0 + i, py0 + j).land;
     if (land / (n * n) < 0.8) return false;
     const cx = (px0 + n / 2) * s;
     const cy = (py0 + n / 2) * s;
@@ -181,6 +181,19 @@ export async function build(prisma: PrismaClient, userId: string, cityId: string
     idempotent(tx, userId, idemKey ? `build:${idemKey}` : undefined, async () => {
       const city = await lockCity(tx, cityId);
       if (city.ownerId !== userId) throw forbidden('Само кметът (собственикът) може да строи в града');
+      // град, опрял до друг град: първо магистрала от поне 20 плочки до границата, после всичко останало
+      const onlyHighway = (input.action === 'road' && input.roadClass === 'highway') || input.action === 'bulldoze';
+      if (!onlyHighway) {
+        const bs = await borderStatus(tx, city);
+        if (bs.blocked) {
+          const names = bs.neighbors.filter((n) => !bs.linked.includes(n.id)).map((n) => `„${n.name}“`);
+          throw new DomainError(
+            'BORDER_HIGHWAY_REQUIRED',
+            `Градът граничи с ${names.join(', ')}. Градовете се свързват само с градска магистрала: постройте магистрала от поне ${BORDER_HIGHWAY_MIN} плочки до границата – дотогава не може да се строи нищо друго (сега: ${bs.longest}).`,
+            409,
+          );
+        }
+      }
       const tick = await currentTick(tx);
       const territory = new Set(territoryKeys(city.parcels));
       const before = city.tiles as unknown as TileMap;
@@ -592,9 +605,10 @@ export async function getCity(prisma: PrismaClient, cityId: string, viewerId: st
     publicPolicy: { taxes: (city.policy as unknown as CityPolicy).taxes, importTariff: (city.policy as unknown as CityPolicy).importTariff },
   };
   if (!isOwner) return base;
-  const account = await prisma.account.findUnique({ where: { id: acc.city(cityId) } });
+  const [account, border] = await Promise.all([prisma.account.findUnique({ where: { id: acc.city(cityId) } }), borderStatus(prisma, city)]);
   return {
     ...base,
+    border: { ...border, min: BORDER_HIGHWAY_MIN },
     treasury: Number(account?.balance ?? 0n),
     pop: city.pop,
     policy: city.policy,

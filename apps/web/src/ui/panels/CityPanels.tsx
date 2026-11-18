@@ -690,7 +690,7 @@ function growthText(
     case 'road':
       return {
         icon: '🛣',
-        text: 'Няма улица на до 2 плочки – сградите се строят само до път.',
+        text: 'Няма улица точно до парцела – сградите се строят само непосредствено до път.',
         fix: { label: 'Строй улица', tool: { tool: { kind: 'road', cls: 'street' } } },
       };
     case 'power':

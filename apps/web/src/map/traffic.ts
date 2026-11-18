@@ -309,6 +309,15 @@ export class Traffic {
 
   /** Плочки вътре в тунел – колите и хората там не се виждат. */
   hidden = new Set<string>();
+  /** Мостове: платното е издигнато – колите и пешеходците по него се рисуват по-високо (h0→h1 по оста). */
+  bridges = new Map<string, { axis: 'x' | 'y'; h0: number; h1: number }>();
+  /** Височина на платното (px) в точка от света – 0 извън мостовете. */
+  elevation(x: number, y: number) {
+    const b = this.bridges.get(tileKey(Math.floor(x), Math.floor(y)));
+    if (!b) return 0;
+    const f = b.axis === 'x' ? x - Math.floor(x) : y - Math.floor(y);
+    return b.h0 + (b.h1 - b.h0) * f;
+  }
   /** Вали ли сняг (снегорините излизат). */
   snowing = false;
 
@@ -1051,6 +1060,8 @@ export class Traffic {
       c.alpha = Math.max(0, Math.min(1, c.alpha + c.fade * dt * 1.6));
       if (c.fade < 0 && c.alpha <= 0) c.remove = true;
       const p = iso(c.x, c.y);
+      const lift = this.bridges.size ? this.elevation(c.x, c.y) : 0;
+      p.y -= lift;
       c.sp.position.set(p.x, p.y);
       c.sp.texture = c.frames[headingFrame(c.hx, c.hy)];
       c.sp.zIndex = c.x + c.y;
@@ -1087,6 +1098,7 @@ export class Traffic {
       const sy = p.hx + p.hy;
       const away = sy < 0;
       const s = iso(p.x + p.jitter * p.hy, p.y - p.jitter * p.hx);
+      if (this.bridges.size) s.y -= this.elevation(p.x, p.y);
       p.sp.position.set(s.x, s.y);
       p.sp.texture = p.frames[(away ? 4 : 0) + (p.wait > 0 ? 0 : Math.floor(p.phase))];
       p.sp.scale.x = Math.abs(p.sp.scale.x) * (sx >= 0 ? 1 : -1);

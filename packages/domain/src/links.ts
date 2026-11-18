@@ -2,7 +2,7 @@
  * Магистрали между градовете. Кметът плаща от бюджета на града си; магистралата важи и в двете посоки:
  * превозът на стоки между двата града е по-евтин и по-бърз (множител BALANCE.links.shippingMult).
  */
-import { BALANCE } from '@gce/shared';
+import { BALANCE, type TileMap } from '@gce/shared';
 import { isUniqueViolation, withTx, type PrismaClient, type Tx } from '@gce/database';
 import { DomainError, bad, conflict, forbidden, notFound } from './errors';
 import { SYS, acc, transfer } from './ledger';
@@ -10,6 +10,7 @@ import { idempotent } from './idempotency';
 import { cityDistance, currentTick } from './world';
 import { lockCity } from './cities';
 import { logEvent } from './events';
+import { loadCityHeavy } from './cityCache';
 
 const pair = (a: string, b: string): [string, string] => (a < b ? [a, b] : [b, a]);
 
@@ -62,11 +63,68 @@ export async function listLinks(prisma: PrismaClient | Tx) {
   const links = await prisma.cityLink.findMany({ orderBy: { createdAt: 'asc' } });
   if (!links.length) return [];
   const ids = [...new Set(links.flatMap((l) => [l.aId, l.bId]))];
-  const cities = await prisma.city.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, originX: true, originY: true } });
+  const cities = await prisma.city.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, originX: true, originY: true, version: true } });
   const byId = new Map(cities.map((c) => [c.id, c]));
+  const heavy = new Map<string, Awaited<ReturnType<typeof loadCityHeavy>>>();
+  for (const c of cities) heavy.set(c.id, await loadCityHeavy(prisma as PrismaClient, c.id, c.version));
+  const end = (c: { id: string; originX: number; originY: number }, toward: { originX: number; originY: number }) =>
+    linkEnd(heavy.get(c.id)?.tiles as TileMap | undefined, heavy.get(c.id)?.parcels ?? [], c, toward);
   return links
     .filter((l) => byId.has(l.aId) && byId.has(l.bId))
-    .map((l) => ({ id: l.id, a: byId.get(l.aId)!, b: byId.get(l.bId)!, length: l.length, cost: Number(l.cost) }));
+    .map((l) => {
+      const a = byId.get(l.aId)!;
+      const b = byId.get(l.bId)!;
+      return {
+        id: l.id,
+        a: { id: a.id, name: a.name, originX: a.originX, originY: a.originY, ...end(a, b) },
+        b: { id: b.id, name: b.name, originX: b.originX, originY: b.originY, ...end(b, a) },
+        length: l.length,
+        cost: Number(l.cost),
+      };
+    });
+}
+
+/**
+ * Къде магистралата влиза в града: „вход“ (gate) – точка точно извън територията в посока към другия град
+ * (там е пътният възел), и „изход“ (exit) – най-добрият път на града (магистрала/булевард/улица), най-близо
+ * до другия град, с който възелът се свързва с рампа. Без пътища – центърът на ръба на територията.
+ */
+export function linkEnd(
+  tiles: TileMap | undefined,
+  parcels: { px: number; py: number }[],
+  c: { originX: number; originY: number },
+  toward: { originX: number; originY: number },
+): { gate: { x: number; y: number }; exit: { x: number; y: number } } {
+  const S = BALANCE.world.parcelSize;
+  const own = new Set(parcels.map((p) => `${p.px},${p.py}`));
+  const inside = (x: number, y: number) => own.has(`${Math.floor(x / S)},${Math.floor(y / S)}`);
+  const rank: Record<string, number> = { highway: 0, avenue: 1, industrial: 2, street: 3, rural: 4 };
+  let exit = { x: c.originX, y: c.originY };
+  let best = Infinity;
+  for (const [k, t] of Object.entries(tiles ?? {})) {
+    if (t.t !== 'road') continue;
+    const [x, y] = k.split(',').map(Number);
+    const d = Math.hypot(toward.originX - x, toward.originY - y) + (rank[t.c ?? 'street'] ?? 3) * 3;
+    if (d < best) {
+      best = d;
+      exit = { x, y };
+    }
+  }
+  // от изхода към другия град – до първата точка извън територията
+  const dx = toward.originX - exit.x;
+  const dy = toward.originY - exit.y;
+  const L = Math.max(1, Math.hypot(dx, dy));
+  let gate = { ...exit };
+  if (parcels.length)
+    for (let s = 0; s < 200; s++) {
+      const x = Math.round(exit.x + (dx / L) * s);
+      const y = Math.round(exit.y + (dy / L) * s);
+      gate = { x, y };
+      if (!inside(x, y)) break;
+    }
+  // възелът – малко извън границата
+  gate = { x: Math.round(gate.x + (dx / L) * 2), y: Math.round(gate.y + (dy / L) * 2) };
+  return { gate, exit };
 }
 
 /** Множител на превоза между два града (по-евтино при магистрала). */

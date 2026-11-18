@@ -15,7 +15,7 @@ import {
   type ZoneType,
 } from '@gce/shared';
 import { REAL_PLACES, getWorld } from '@gce/world-generation';
-import { IsoRenderer, toTile, type CityRender } from './renderer';
+import { IsoRenderer, toTile, type CityRender, type LinkView } from './renderer';
 /** Рисувачът на картата (изометричен 2D). */
 type MapRenderer = IsoRenderer;
 import { computeNeedBadges } from './needBadges';
@@ -215,7 +215,7 @@ export function MapView() {
 
   // Магистрали между градовете.
   useEffect(() => {
-    get<{ a: { originX: number; originY: number }; b: { originX: number; originY: number } }[]>('/world/links')
+    get<LinkView[]>('/world/links')
       .then((l) => r.current?.setLinks(l))
       .catch(() => undefined);
   }, [version, loading]);
@@ -271,7 +271,7 @@ export function MapView() {
       return;
     }
     if (layer === 'power' || layer === 'water') {
-      // обхватът се смята направо от плочките: ток и вода стигат до всяка плочка на до 2 плочки от път
+      // обхватът се смята направо от плочките: ток и вода стигат до плочките непосредствено до път
       rr.drawOverlay(utilityReach(city, layer), layer);
       return;
     }
@@ -570,6 +570,17 @@ export function MapView() {
       {tool.kind === 'select' && hover && hoverPx && tileInfo && (tileInfo.t === 'zone' || tileInfo.t === 'service' || tileInfo.t === 'facility') && (
         <HoverCard tile={tileInfo} info={derivedRef.current?.levels?.[tileKey(hover.x, hover.y)]} x={hoverPx.x} y={hoverPx.y} />
       )}
+      {city?.isOwner && city.border?.blocked && (
+        <div className="border-banner glass" role="alert">
+          <b>🛣 Градът опря до {city.border.neighbors.filter((n) => !city.border!.linked.includes(n.id)).map((n) => '„' + n.name + '“').join(', ')}</b>
+          <span className="small">
+            Свържете ги с градска магистрала от поне {city.border.min} плочки до границата (сега: {city.border.longest}). Дотогава не може да се строи нищо друго.
+          </span>
+          <button className="btn primary small" onClick={() => setState({ tool: { kind: 'road', cls: 'highway' } })}>
+            🚀 Строй магистрала
+          </button>
+        </div>
+      )}
       <div className="map-hud">
         {hover && (
           <span>
@@ -670,7 +681,8 @@ function utilityReach(city: NonNullable<ReturnType<typeof getState>['city']>, ki
   for (const [k, t] of Object.entries(tiles)) {
     if (t.t !== 'road') continue;
     const [x, y] = k.split(',').map(Number);
-    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (Math.abs(dx) + Math.abs(dy) <= 2) reach.add(tileKey(x + dx, y + dy));
+    const R = BALANCE.construction.roadAccess;
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) if (Math.abs(dx) + Math.abs(dy) <= R) reach.add(tileKey(x + dx, y + dy));
   }
   const st = (city.stats as { power?: { supply: number; ratio: number }; water?: { supply: number; ratio: number } } | undefined)?.[kind];
   const level = !st || st.supply <= 0 ? 0.2 : st.ratio < 0.99 ? 0.5 : 1;
@@ -721,7 +733,7 @@ function UtilityLegend({ kind }: { kind: 'power' | 'water' }) {
         </span>
       </div>
       <div className="small muted">
-        {isP ? 'Токът' : 'Водата'} стига до всяка плочка на до 2 плочки от улица. {isP ? '' : 'Помпа до река дава много повече вода. '}
+        {isP ? 'Токът' : 'Водата'} стига до плочките непосредствено до улица. {isP ? '' : 'Помпа до река дава много повече вода. '}
         {spare < 0 || supply <= 0 ? 'Постройте още:' : ''}
       </div>
       {(spare < 0 || supply <= 0 || spare < demand * 0.15) && (

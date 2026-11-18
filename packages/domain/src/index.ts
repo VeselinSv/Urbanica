@@ -21,3 +21,4 @@ export * from './simloop';
 export * from './analytics';
 export * from './maintenance';
 export * from './autosell';
+export * from './border';

@@ -26,6 +26,15 @@ export function SpriteGallery() {
     for (const t of ['oak', 'birch', 'poplar', 'willow', 'conifer', 'pine', 'bush'] as TreeKind[])
       for (let v = 0; v < 3; v++) keys.push({ k: 'tree', t, v, size: 2.2 + v * 0.3 });
     keys.push({ k: 'construction', v: 3 });
+    // тунели (4 посоки) и мостове (подход, начало, среда – по двете оси)
+    for (let dir = 0; dir < 4; dir++) keys.push({ k: 'tunnel', v: 0, dir, w: 0.5 });
+    for (const axis of ['x', 'y'] as const)
+      for (const [h0, h1, water] of [
+        [0, 5.5, false],
+        [5.5, 11, true],
+        [11, 11, true],
+      ] as [number, number, boolean][])
+        keys.push({ k: 'bridge', axis, h0, h1, water, w: 0.5, lamp: true, v: 0 });
     const want = only?.split(',') ?? [];
     const lvl = new URLSearchParams(location.search).get('lvl');
     const list = keys.filter(

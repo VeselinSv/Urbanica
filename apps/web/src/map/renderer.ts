@@ -1,7 +1,7 @@
 import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import { BALANCE, hashString, parseKey, tileKey, type TileMap, type TileState } from '@gce/shared';
 import { REAL_PLACES, type WorldGenerator } from '@gce/world-generation';
-import { CHUNK, paintChunk, paintCountry, paintStats, tunnelKind, type ChunkCanvas, type CityActor } from './paint';
+import { CHUNK, bridgeInfo, paintChunk, paintCountry, paintStats, tunnelKind, type ChunkCanvas, type CityActor } from './paint';
 import { TH, TW, getSprite } from './sprites';
 import { CityLife, type IssueMarker, type NeedBadge } from './life';
 import { Atmosphere, type DayMode, type Weather } from './atmosphere';
@@ -44,6 +44,17 @@ export interface CityRender {
 }
 
 export type LayerData = Record<string, number> | null;
+/** Магистрала между два града: краищата с възел (gate) и вход в градската мрежа (exit). */
+export interface LinkEnd {
+  originX: number;
+  originY: number;
+  gate?: { x: number; y: number };
+  exit?: { x: number; y: number };
+}
+export interface LinkView {
+  a: LinkEnd;
+  b: LinkEnd;
+}
 
 /** Нива на детайлност: държава (една текстура), регион (чанкове с ниска резолюция), близо (пълен детайл). */
 type Lod = 'mid' | 'near';
@@ -193,19 +204,54 @@ export class IsoRenderer {
     if (this.atmo) this.atmo.weather = w;
     if (this.life) this.life.traffic.snowing = w === 'snow';
   }
-  /** Магистрали между градовете: тъмна лента с жълта ос, от център до център. */
-  setLinks(links: { a: { originX: number; originY: number }; b: { originX: number; originY: number } }[]) {
+  /**
+   * Магистрали между градовете – като истинските около София: магистралата не минава през града, а спира на
+   * пътен възел точно извън територията (кръгово кръстовище с отбивки), откъдето рампа влиза до най-близкия
+   * голям път на града.
+   */
+  setLinks(links: LinkView[]) {
     const g = this.linkLayer;
     g.clear();
-    for (const pass of [0, 1, 2]) {
+    const pt = (p: { x: number; y: number }) => toScreen(p.x + 0.5, p.y + 0.5);
+    const ends = (l: LinkView) => [l.a, l.b].map((e) => ({ gate: pt(e.gate ?? { x: e.originX, y: e.originY }), exit: pt(e.exit ?? { x: e.originX, y: e.originY }) }));
+    // насип/сянка, асфалт, банкети, разделителна ивица
+    for (const pass of [0, 1, 2, 3]) {
       for (const l of links) {
-        const a = toScreen(l.a.originX + 0.5, l.a.originY + 0.5);
-        const b = toScreen(l.b.originX + 0.5, l.b.originY + 0.5);
-        g.moveTo(a.x, a.y).lineTo(b.x, b.y);
-        if (pass === 0) g.stroke({ width: 22, color: 0x2f3237, alpha: 0.35, cap: 'round' });
-        else if (pass === 1) g.stroke({ width: 14, color: 0x4a4d52, alpha: 0.9, cap: 'round' });
-        else g.stroke({ width: 1.6, color: 0xe8c547, alpha: 0.9 });
+        const [a, b] = ends(l);
+        // главното трасе между двата възела
+        g.moveTo(a.gate.x, a.gate.y).lineTo(b.gate.x, b.gate.y);
+        if (pass === 0) g.stroke({ width: 30, color: 0x2f3237, alpha: 0.28, cap: 'round' });
+        else if (pass === 1) g.stroke({ width: 22, color: 0x4a4d52, alpha: 0.95, cap: 'round' });
+        else if (pass === 2) g.stroke({ width: 17, color: 0x56595f, alpha: 1, cap: 'round' });
+        else g.stroke({ width: 1.4, color: 0xd9dcdf, alpha: 0.9 });
+        // рампите от възела до градския път (по-тесни)
+        for (const e of [a, b]) {
+          g.moveTo(e.gate.x, e.gate.y).lineTo(e.exit.x, e.exit.y);
+          if (pass === 0) g.stroke({ width: 16, color: 0x2f3237, alpha: 0.25, cap: 'round' });
+          else if (pass === 1) g.stroke({ width: 11, color: 0x4f5257, alpha: 0.95, cap: 'round' });
+          else if (pass === 3) g.stroke({ width: 0.9, color: 0xffffff, alpha: 0.65 });
+        }
       }
+    }
+    // пътните възли: голямо кръгово с отбивки и зелен остров
+    for (const l of links)
+      for (const e of ends(l)) {
+        const { x, y } = e.gate;
+        g.ellipse(x, y, 30, 15).stroke({ width: 12, color: 0x4a4d52, alpha: 0.95 });
+        g.ellipse(x, y, 30, 15).stroke({ width: 1, color: 0xffffff, alpha: 0.55 });
+        g.ellipse(x, y, 23, 11.5).fill({ color: 0x6f9a4a, alpha: 0.95 });
+        g.ellipse(x - 4, y - 2, 7, 3.5).fill({ color: 0x86b25d, alpha: 0.9 });
+      }
+    // жълтите банкети по магистралата отгоре
+    for (const l of links) {
+      const [a, b] = ends(l);
+      const dx = b.gate.x - a.gate.x;
+      const dy = b.gate.y - a.gate.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = (-dy / len) * 9;
+      const ny = (dx / len) * 9;
+      for (const s of [-1, 1]) g.moveTo(a.gate.x + nx * s, a.gate.y + ny * s).lineTo(b.gate.x + nx * s, b.gate.y + ny * s);
+      g.stroke({ width: 1, color: 0xe8c547, alpha: 0.85 });
     }
   }
 
@@ -614,11 +660,15 @@ export class IsoRenderer {
     if (changed.length) {
       if (this.life && this.gen) {
         const hidden = new Set<string>();
+        const bridges = new Map<string, { axis: 'x' | 'y'; h0: number; h1: number }>();
         for (const k of this.cityTiles.keys()) {
           const [x, y] = parseKey(k);
           if (tunnelKind(this.gen, this.lookup, x, y) === 'inside') hidden.add(k);
+          const bi = bridgeInfo(this.gen, this.lookup, x, y);
+          if (bi) bridges.set(k, bi);
         }
         this.life.traffic.hidden = hidden;
+        this.life.traffic.bridges = bridges;
       }
       this.life?.setTiles(this.cityTiles);
       this.atmo?.setTiles(this.cityTiles);

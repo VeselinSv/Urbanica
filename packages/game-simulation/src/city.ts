@@ -130,7 +130,7 @@ export function stepCity(input: CityInput): CityStepResult {
   const roads: string[] = [];
   for (const [k, t] of Object.entries(tiles)) if (t.t === 'road') roads.push(k);
   const access = new Set<string>();
-  for (const r of roads) for (const n of neighborsWithin(r, 2)) access.add(n);
+  for (const r of roads) for (const n of neighborsWithin(r, BALANCE.construction.roadAccess)) access.add(n);
   // Пешеходен достъп: тротоар или алея на до 2 плочки от сградата.
   const walkAccess = new Set<string>();
   for (const [k, t] of Object.entries(tiles)) if (isWalkable(t)) for (const n of neighborsWithin(k, 2)) walkAccess.add(n);

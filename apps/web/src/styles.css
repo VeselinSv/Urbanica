@@ -2012,3 +2012,20 @@ details.callout.help ol {
   gap: 4px;
   margin-bottom: 6px;
 }
+
+/* Граница с друг град – нужна е магистрала */
+.border-banner {
+  position: absolute;
+  top: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: grid;
+  gap: 6px;
+  max-width: 460px;
+  padding: 10px 14px;
+  border: 1px solid var(--bad);
+  border-radius: 12px;
+  text-align: center;
+  justify-items: center;
+}

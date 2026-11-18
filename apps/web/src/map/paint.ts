@@ -695,6 +695,35 @@ export function isBridge(gen: WorldGenerator, x: number, y: number) {
   return t === Terrain.River || t === Terrain.Water;
 }
 
+/** Височина на платното на моста над водата (px при мащаб 1). */
+export const BRIDGE_H = 11;
+
+/**
+ * Прав мост (или подход към него): по коя ос върви и на каква височина е платното в двата края на плочката
+ * (h0 – към −ос, h1 – към +ос). Подходът на брега се издига от 0 до половината, а първата плочка над водата –
+ * до пълната височина: мостът „излиза“ от земята. null – не е прав мост/подход (кръстовища остават ниски).
+ */
+export function bridgeInfo(gen: WorldGenerator, lookup: TileLookup, x: number, y: number): { axis: 'x' | 'y'; h0: number; h1: number; water: boolean } | null {
+  if (lookup(x, y)?.t !== 'road') return null;
+  const road = (a: number, b: number) => lookup(a, b)?.t === 'road';
+  const ax = road(x + 1, y) || road(x - 1, y);
+  const ay = road(x, y + 1) || road(x, y - 1);
+  if (ax === ay) return null;
+  const axis: 'x' | 'y' = ax ? 'x' : 'y';
+  const [dx, dy] = axis === 'x' ? [1, 0] : [0, 1];
+  const br = (a: number, b: number) => road(a, b) && isBridge(gen, a, b);
+  const H = BRIDGE_H;
+  if (isBridge(gen, x, y)) {
+    const back = br(x - dx, y - dy);
+    const fwd = br(x + dx, y + dy);
+    return { axis, h0: back ? H : H * 0.5, h1: fwd ? H : H * 0.5, water: true };
+  }
+  // подход на брега: пътят продължава по моста от едната страна
+  if (br(x + dx, y + dy)) return { axis, h0: 0, h1: H * 0.5, water: false };
+  if (br(x - dx, y - dy)) return { axis, h0: H * 0.5, h1: 0, water: false };
+  return null;
+}
+
 /** Тунел: плочка път в планина. 'inside' – скрита в планината, 'portal' – вход (до път извън планината). */
 export function tunnelKind(gen: WorldGenerator, lookup: TileLookup, x: number, y: number): 'inside' | 'portal' | null {
   if (lookup(x, y)?.t !== 'road') return null;
@@ -733,6 +762,21 @@ function paintBridgeShadows(g: Ctx, gen: WorldGenerator, roads: RoadTile[]) {
 /** Парапети и колони на мостовете; тунелите – планината отново покрива пътя. */
 function paintBridgesTunnels(g: Ctx, gen: WorldGenerator, roads: RoadTile[], lookup: TileLookup, detail: number, season?: Season) {
   for (const r of roads) {
+    if (isBridge(gen, r.x, r.y) && bridgeInfo(gen, lookup, r.x, r.y)) {
+      // прав мост: платното е издигнато (отделен обект) – долу е водата със сянката му
+      const st = roadStyle(r.t);
+      g.save();
+      roadPath(g, r);
+      g.lineCap = 'butt';
+      g.lineWidth = st.outer + 0.02;
+      g.strokeStyle = rgb(0x2c6489);
+      g.stroke();
+      g.lineWidth = st.width;
+      g.strokeStyle = 'rgba(6,20,36,0.4)';
+      g.stroke();
+      g.restore();
+      continue;
+    }
     if (isBridge(gen, r.x, r.y)) {
       const st = roadStyle(r.t);
       const cx = r.x + 0.5;
@@ -983,7 +1027,28 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
             else if (hv < 0.6) out.push({ d: x + y + 1.1, wx: x + 0.2, wy: y + 0.85, draw: (g, px, py) => bench(g, px, py, opts.res) });
           }
         } else if (t.t === 'road') {
-          if (tunnelKind(gen, lookup, x, y) === 'portal') out.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'tunnel', v: v % 3, dir: 0 } });
+          if (tunnelKind(gen, lookup, x, y) === 'portal') {
+            // порталът гледа към пътя навън (от планината): 0 +x, 1 +y, 2 −x, 3 −y
+            const isM = (a: number, b: number) => gen.terrain[b * gen.size + a] === Terrain.Mountains;
+            let dir = 0;
+            for (let i = 0; i < 4; i++) {
+              const [dx, dy] = DIRS[i];
+              if (lookup(x + dx, y + dy)?.t === 'road' && !isM(x + dx, y + dy)) dir = i;
+            }
+            const geo = ROAD_GEOM[t.c ?? 'street'];
+            out.push({ d: x + y + 1.2, wx: x + 0.5, wy: y + 0.5, key: { k: 'tunnel', v: v % 3, dir, w: Math.round(geo.width * 100) / 100 } });
+          }
+          // мост/подход: издигнато платно на колони, с парапети и лампи (над земния път)
+          const bi = bridgeInfo(gen, lookup, x, y);
+          if (bi) {
+            const geo = ROAD_GEOM[t.c ?? 'street'];
+            out.push({
+              d: x + y + 0.9,
+              wx: x + 0.5,
+              wy: y + 0.5,
+              key: { k: 'bridge', axis: bi.axis, h0: bi.h0, h1: bi.h1, water: bi.water, w: Math.round(geo.width * 100) / 100, lamp: (x + y) % 2 === 0, v: v % 3 },
+            });
+          }
           if (t.st && !mid) {
             const horiz = lookup(x + 1, y)?.t === 'road' || lookup(x - 1, y)?.t === 'road';
             const geo = ROAD_GEOM[t.c ?? 'street'];

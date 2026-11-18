@@ -2,7 +2,7 @@
  * Значки над сградите: какво им липсва, за да се построят или надградят.
  * Съседните сгради с една и съща липса се групират в една значка (с брой), за да няма шум.
  */
-import { UPGRADE_REQUIREMENT_LABELS, ZONES, parseKey, tileKey, type CityDerived, type TileMap, type UpgradeRequirement } from '@gce/shared';
+import { BALANCE, UPGRADE_REQUIREMENT_LABELS, ZONES, parseKey, tileKey, type CityDerived, type TileMap, type UpgradeRequirement } from '@gce/shared';
 import type { CityDetail } from '../store';
 import { REQ_ICON } from '../ui/needs';
 import type { NeedBadge } from './life';
@@ -12,12 +12,13 @@ const BADGE_REQS: UpgradeRequirement[] = ['road', 'power', 'water', 'sidewalk'];
 
 export function computeNeedBadges(city: CityDetail, derived: CityDerived | null): NeedBadge[] {
   const tiles = city.tiles as TileMap;
-  // достъп до път (до 2 плочки, както в симулацията)
+  // достъп до път (само плочките до пътя, както в симулацията)
   const access = new Set<string>();
   for (const [k, t] of Object.entries(tiles)) {
     if (t.t !== 'road') continue;
     const [x, y] = parseKey(k);
-    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (Math.abs(dx) + Math.abs(dy) <= 2) access.add(tileKey(x + dx, y + dy));
+    const R = BALANCE.construction.roadAccess;
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) if (Math.abs(dx) + Math.abs(dy) <= R) access.add(tileKey(x + dx, y + dy));
   }
   const noPower = (city.stats?.power?.supply ?? 1) <= 0;
   const noWater = (city.stats?.water?.supply ?? 1) <= 0;

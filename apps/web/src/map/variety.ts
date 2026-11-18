@@ -226,6 +226,7 @@ export function variedBuilding(
   for (const [i, p] of parts.entries()) mass(K, g, P, r, p.b, p.z0, p.z1, p.m, seed + i * 7, dim);
   const front = parts.reduce((a, p) => (p.z0 === 0 && p.b[2] + p.b[3] > a.b[2] + a.b[3] ? p : a), parts[0]);
   entrance(K, g, P, front.b, face);
+  if (o.plaza !== false) dressing(K, g, P, r, b, seed, face);
   // антена или хеликоптерна площадка на високите
   if (H > 110) {
     const top = parts.reduce((a, p) => (p.z1 > a.z1 ? p : a), parts[0]);
@@ -243,17 +244,49 @@ export function variedBuilding(
   }
 }
 
+/**
+ * Озеленяване на площада пред сградата: дърво в предния ъгъл, саксии с цветя и пейка покрай лицевата
+ * стена, велостойка – сградите не стоят на голо, а в оформено пространство (като парка).
+ */
+export function dressing(K: Kit, g: Ctx, P: P3, r: number, b: B4, seed: number, face: Face) {
+  const fu = b[2] + 0.07;
+  const fv = b[3] + 0.07;
+  // саксии с храсти покрай лицевата стена
+  for (let i = 0; i < 3; i++) {
+    const s = 0.15 + i * 0.35;
+    const [u, v] = face === 'left' ? [b[0] + (b[2] - b[0]) * s, fv - 0.02] : [fu - 0.02, b[1] + (b[3] - b[1]) * s];
+    if (Math.abs(s - 0.5) < 0.12) continue; // входът
+    K.box(g, P, u - 0.03, v - 0.02, u + 0.03, v + 0.02, 0, 2.2, { wall: 0x9c9890, edge: false });
+    const [x, y] = P(u, v, 3.2);
+    g.fillStyle = rgb(h01(seed, i, 111) < 0.5 ? 0x5d8f3e : 0x6f9a4a);
+    g.beginPath();
+    g.ellipse(x, y, 2.6 * r, 1.8 * r, 0, 0, Math.PI * 2);
+    g.fill();
+    if (h01(seed, i, 112) < 0.6) {
+      g.fillStyle = rgb([0xe8505b, 0xf2c94c, 0xb56be0][i % 3]);
+      g.beginPath();
+      g.arc(x + 0.8 * r, y - 0.6 * r, 0.8 * r, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  // пейка
+  const [bu, bv] = face === 'left' ? [b[0] + (b[2] - b[0]) * 0.32, fv + 0.02] : [fu + 0.02, b[1] + (b[3] - b[1]) * 0.32];
+  K.box(g, P, bu - 0.05, bv - 0.012, bu + 0.05, bv + 0.012, 1, 2, { wall: 0x8b5e3c, edge: false });
+  // дърво в предния ъгъл
+  K.tree(g, P, r, Math.min(0.45, fu), Math.min(0.45, fv), seed + 5, 0.75 + h01(seed, 113) * 0.25);
+}
+
 // ------------------------------------------------------------------ паркинг с истински коли
 const PARKED: SmoothModel[] = ['sedan', 'hatch', 'suv', 'sedan', 'hatch', 'van', 'sedan', 'suv'];
 const CAR_COLORS = [0xc0392b, 0xecf0f1, 0x2c3e50, 0x2471a3, 0x7f8c8d, 0xf1c40f, 0x1e8449, 0xd5d8dc, 0x111418, 0x8e44ad, 0xa04000];
 
 /** Паркирана кола (гладкият модел) в точка (u,v) – yaw 0 = по оста u. */
-export function parkedCar(g: Ctx, P: P3, r: number, u: number, v: number, yaw: number, seed: number) {
+export function parkedCar(g: Ctx, P: P3, r: number, u: number, v: number, yaw: number, seed: number, model?: SmoothModel, color?: number) {
   const [x, y] = P(u, v, 0);
   g.save();
   g.translate(x, y);
   g.scale(r * 0.78, r * 0.78);
-  drawSmoothCar(g, PARKED[Math.floor(h01(seed, 71) * PARKED.length)], CAR_COLORS[Math.floor(h01(seed, 72) * CAR_COLORS.length)], yaw);
+  drawSmoothCar(g, model ?? PARKED[Math.floor(h01(seed, 71) * PARKED.length)], color ?? CAR_COLORS[Math.floor(h01(seed, 72) * CAR_COLORS.length)], yaw);
   g.restore();
 }
 

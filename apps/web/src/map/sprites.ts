@@ -1113,7 +1113,8 @@ export type BuildingKey = (
   | { k: 'construction'; v: number }
   | { k: 'tree'; t: TreeKind; v: number; size: number }
   | { k: 'rock'; v: number; peak?: number; snow?: boolean }
-  | { k: 'tunnel'; v: number; dir: number }
+  | { k: 'tunnel'; v: number; dir: number; w?: number }
+  | { k: 'bridge'; axis: 'x' | 'y'; h0: number; h1: number; water: boolean; w: number; lamp: boolean; v: number }
 ) & { sn?: Season };
 
 const cache = new Map<string, Sprite>();
@@ -1163,21 +1164,9 @@ function drawSprite(key: BuildingKey, r: number): Sprite {
       });
     }
     case 'tunnel':
-      return makeSprite(r, 30, (g, P) => {
-        const [x, y] = P(0, 0, 0);
-        g.fillStyle = rgb(0x7d7a73);
-        g.beginPath();
-        g.ellipse(x, y - 6 * r, 22 * r, 18 * r, 0, Math.PI, 0);
-        g.lineTo(x + 22 * r, y + 4 * r);
-        g.lineTo(x - 22 * r, y + 4 * r);
-        g.fill();
-        g.fillStyle = '#1b1d20';
-        g.beginPath();
-        g.ellipse(x, y - 4 * r, 15 * r, 12 * r, 0, Math.PI, 0);
-        g.lineTo(x + 15 * r, y + 4 * r);
-        g.lineTo(x - 15 * r, y + 4 * r);
-        g.fill();
-      });
+      return tunnelPortal(key, r);
+    case 'bridge':
+      return bridgeDeck(key, r);
     case 'construction':
       return makeSprite(r, 60, (g, P) => {
         const t = (n: number) => h01(key.v, n);
@@ -1541,6 +1530,9 @@ function zoneBuilding(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Spri
         door(g, P, b, face, 0.5, 0.12, 9, 0x4b5a63);
         if (kind < 0.75) roof(g, P, b, hh, 'flat', dim(0x8d8a86), wall, 0, v);
         else roof(g, P, b, hh, 'hip', dim(pick(ROOF_TILES, t(5))), wall, 12, v);
+        // двор: дърво и пейка пред блока
+        KIT.tree(g, P, r, 0.44, 0.44, v + 3, 0.8);
+        box(g, P, -0.2, 0.42, -0.08, 0.445, 1, 2, { wall: 0x8b5e3c, edge: false });
         return;
       }
       // висока жилищна сграда: една от 10-те форми × 10-те материала
@@ -1571,6 +1563,25 @@ function zoneBuilding(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Spri
         roof(g, P, b, hh, 'flat', dim(0x8f8b85), wall, 0, v);
         // табела
         faceQuad(g, P, face, b, 0.25, 0.75, hh - 4, hh - 0.5, rgb(0xf4f1e8));
+        // маси с чадъри пред заведението
+        for (let i = 0; i < 2; i++) {
+          const [u, w] = face === 'left' ? [-0.15 + i * 0.3, 0.42] : [0.42, -0.15 + i * 0.3];
+          const [x, y] = P(u, w, 0);
+          g.strokeStyle = '#5b5f63';
+          g.lineWidth = 0.6 * r;
+          g.beginPath();
+          g.moveTo(x, y);
+          g.lineTo(x, y - 8 * r);
+          g.stroke();
+          g.fillStyle = rgb(pick([0xc0392b, 0xf4f1e8, 0x2e7d32], t(30 + i)));
+          g.beginPath();
+          g.ellipse(x, y - 8 * r, 5 * r, 2.2 * r, 0, Math.PI, 0);
+          g.fill();
+          g.fillStyle = rgb(0xe9e4d8);
+          g.beginPath();
+          g.ellipse(x, y - 3 * r, 2.4 * r, 1.1 * r, 0, 0, Math.PI * 2);
+          g.fill();
+        }
         return;
       }
       if (lvl === 2) {
@@ -1793,6 +1804,185 @@ function farmTile(g: Ctx, P: P3, r: number, v: number, lvl: number, dim: (c: num
   }
 }
 
+/**
+ * Издигнато платно на мост (или подход към него): бетонна плоча с бордюри, асфалт с осова линия, парапети с
+ * колони, опора във водата и лампа през плочка; на брега – подпорна стена, която излиза от земята.
+ * h0/h1 – височина на платното в двата края на плочката по оста (подходите се издигат постепенно).
+ */
+function bridgeDeck(key: Extract<BuildingKey, { k: 'bridge' }>, r: number): Sprite {
+  const { axis, h0, h1, water, w, lamp } = key;
+  return makeSprite(r, 50, (g, P0) => {
+    // локално: a – по оста на моста (−0.5..0.5), b – напречно
+    const P: P3 = (a, b, h) => (axis === 'x' ? P0(a, b, h) : P0(b, a, h));
+    const bx = (a0: number, b0: number, a1: number, b1: number, z0: number, z1: number, s: BoxStyle) =>
+      axis === 'x' ? box(g, P0, a0, b0, a1, b1, z0, z1, s) : box(g, P0, b0, a0, b1, a1, z0, z1, s);
+    const z = (a: number) => h0 + (h1 - h0) * (a + 0.5);
+    const hw = w / 2 + 0.08;
+    const T = 2.4;
+    const concrete = 0xbab6ad;
+    // сянка на платното върху водата/земята
+    poly(g, [P(-0.5, -hw + 0.12, 0), P(0.5, -hw + 0.12, 0), P(0.5, hw + 0.2, 0), P(-0.5, hw + 0.2, 0)], 'rgba(8,20,30,0.28)');
+    if (water && Math.min(h0, h1) > 4) {
+      // опора: бетонна стена с по-широка основа, стъпила във водата
+      bx(-0.06, -hw * 0.8, 0.06, hw * 0.8, -1, z(0) - T, { wall: 0xa9a59c });
+      bx(-0.1, -hw * 0.9, 0.1, hw * 0.9, -1, 1.2, { wall: 0x8f8b83, edge: false });
+    }
+    if (!water) {
+      // подпорна стена на подхода – от земята до платното (видимата страна)
+      poly(g, [P(-0.5, hw, 0), P(0.5, hw, 0), P(0.5, hw, z(0.5)), P(-0.5, hw, z(-0.5))], rgb(mixc(concrete, 0x6b675f, 0.25), axis === 'x' ? LIT.left : LIT.right));
+      for (let i = 1; i < 4; i++) line(g, P(-0.5 + i * 0.25, hw, 0), P(-0.5 + i * 0.25, hw, z(-0.5 + i * 0.25)), 'rgba(0,0,0,0.12)', 0.5 * r);
+    }
+    // задният парапет (зад платното)
+    const rail = (b: number) => {
+      for (let i = 0; i <= 4; i++) {
+        const a = -0.5 + i * 0.25;
+        line(g, P(a, b, z(a)), P(a, b, z(a) + 3.4), rgb(0x8f949a), 0.7 * r);
+      }
+      line(g, P(-0.5, b, z(-0.5) + 3.4), P(0.5, b, z(0.5) + 3.4), rgb(0xd9dcdf), 0.9 * r);
+      line(g, P(-0.5, b, z(-0.5) + 1.8), P(0.5, b, z(0.5) + 1.8), rgb(0xb4b8bd), 0.6 * r);
+    };
+    rail(-hw);
+    // плочата: видимата челна страна + горната повърхност
+    poly(g, [P(-0.5, hw, z(-0.5) - T), P(0.5, hw, z(0.5) - T), P(0.5, hw, z(0.5)), P(-0.5, hw, z(-0.5))], rgb(concrete, axis === 'x' ? LIT.left : LIT.right));
+    poly(g, [P(-0.5, -hw, z(-0.5)), P(0.5, -hw, z(0.5)), P(0.5, hw, z(0.5)), P(-0.5, hw, z(-0.5))], rgb(0xcfcbc2));
+    const aw = w / 2;
+    poly(g, [P(-0.5, -aw, z(-0.5) + 0.2), P(0.5, -aw, z(0.5) + 0.2), P(0.5, aw, z(0.5) + 0.2), P(-0.5, aw, z(-0.5) + 0.2)], rgb(0x4b4e53));
+    // осова линия (прекъсната) и банкети
+    for (const [a0, a1] of [
+      [-0.45, -0.2],
+      [0.05, 0.3],
+    ])
+      line(g, P(a0, 0, z(a0) + 0.3), P(a1, 0, z(a1) + 0.3), 'rgba(255,255,255,0.85)', 0.7 * r);
+    for (const b of [-aw + 0.03, aw - 0.03]) line(g, P(-0.5, b, z(-0.5) + 0.3), P(0.5, b, z(0.5) + 0.3), 'rgba(255,255,255,0.6)', 0.5 * r);
+    rail(hw);
+    if (lamp && water) {
+      const [lx, ly] = P(0, -hw, z(0));
+      g.strokeStyle = '#3b4046';
+      g.lineWidth = 0.9 * r;
+      g.beginPath();
+      g.moveTo(lx, ly);
+      g.lineTo(lx, ly - 15 * r);
+      g.quadraticCurveTo(lx, ly - 17 * r, lx + 3 * r, ly - 16.6 * r);
+      g.stroke();
+      g.fillStyle = '#fff1c4';
+      g.beginPath();
+      g.ellipse(lx + 3.2 * r, ly - 16.2 * r, 1.4 * r, 0.7 * r, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+  });
+}
+
+/**
+ * Портал на тунел: бетонна челна стена със свод, крилни подпорни стени, в отвора – осветена тръба на тунела с
+ * пътя, осовата линия и редица лампи навътре; над портала земята/скалата продължава в планината.
+ * dir – накъде гледа порталът (към пътя навън): 0 +x, 1 +y – към зрителя; 2 −x, 3 −y – обратно.
+ */
+function tunnelPortal(key: Extract<BuildingKey, { k: 'tunnel' }>, r: number): Sprite {
+  const dir = key.dir ?? 0;
+  const w = key.w ?? 0.5;
+  return makeSprite(r, 50, (g, P0) => {
+    const swap = dir === 1 || dir === 3;
+    const sgn = dir >= 2 ? -1 : 1;
+    // локално: a – навън от тунела (+a към пътя отвън), b – напречно
+    const P: P3 = (a, b, h) => (swap ? P0(b, a * sgn, h) : P0(a * sgn, b, h));
+    const concrete = 0xc2bdb3;
+    const rock = 0x8d8a84;
+    const H = 21;
+    const ow = w / 2 + 0.06; // половин ширина на отвора
+    const oh = 10; // височина на отвора до началото на свода
+    const arch = (inset: number, zLift = 0): [number, number][] => {
+      const pts: [number, number][] = [];
+      pts.push(P(0, -ow + inset, zLift));
+      pts.push(P(0, -ow + inset, oh));
+      for (let i = 0; i <= 10; i++) {
+        const t = Math.PI - (i / 10) * Math.PI;
+        pts.push(P(0, Math.cos(t) * (ow - inset), oh + Math.sin(t) * (ow - inset) * 14));
+      }
+      pts.push(P(0, ow - inset, zLift));
+      return pts;
+    };
+    if (dir >= 2) {
+      // порталът гледа навътре в картата: вижда се горният ръб на челната стена и насипът пред нея
+      poly(g, [P(0, -0.5, H), P(0, 0.5, H), P(0.12, 0.5, H), P(0.12, -0.5, H)], rgb(concrete, 1.05));
+      poly(g, [P(0.12, -0.5, H), P(0.12, 0.5, H), P(-0.5, 0.5, 2), P(-0.5, -0.5, 2)], rgb(rock, 0.92));
+      for (let i = 0; i < 5; i++) {
+        const b = -0.4 + i * 0.2;
+        poly(g, [P(0.05, b, H - 1), P(-0.15, b + 0.08, H - 7), P(-0.25, b - 0.05, H - 10)], rgb(rock, 0.75));
+      }
+      return;
+    }
+    // крилни стени – отстрани на входа, понижават се към пътя
+    for (const s of [-1, 1]) {
+      const b0 = s * (ow + 0.05);
+      const b1 = s * 0.5;
+      poly(g, [P(0, b0, 0), P(0.45, b1, 0), P(0.45, b1, 3), P(0, b0, H - 4)], rgb(concrete, s > 0 ? LIT.left : 0.82));
+    }
+    // челна стена (с отвора) – стената е в равнината a = 0
+    const face = arch(0);
+    g.save();
+    poly(g, [P(0, -0.5, 0), P(0, 0.5, 0), P(0, 0.5, H), P(0, -0.5, H)], rgb(concrete, swap ? LIT.left : LIT.right));
+    // корниз и вертикални фуги
+    poly(g, [P(0, -0.5, H - 1.6), P(0, 0.5, H - 1.6), P(0, 0.5, H), P(0, -0.5, H)], rgb(concrete, 1.12));
+    for (const b of [-0.35, 0.35]) line(g, P(0, b, 0), P(0, b, H - 1.6), 'rgba(0,0,0,0.12)', 0.5 * r);
+    // отворът: тъмна тръба, вътрешни стени, пътят навътре и лампите
+    g.beginPath();
+    g.moveTo(face[0][0], face[0][1]);
+    for (const p of face.slice(1)) g.lineTo(p[0], p[1]);
+    g.closePath();
+    g.clip();
+    g.fillStyle = '#141619';
+    g.fill();
+    const depth = -0.55;
+    // вътрешни стени (светли плочки, осветени)
+    poly(g, [P(0, -ow, 0), P(depth, -ow, 0), P(depth, -ow, oh + 4), P(0, -ow, oh + 4)], 'rgba(200,196,182,0.55)');
+    poly(g, [P(0, ow, 0), P(depth, ow, 0), P(depth, ow, oh + 4), P(0, ow, oh + 4)], 'rgba(160,156,145,0.45)');
+    // пътят в тунела
+    poly(g, [P(0, -ow + 0.03, 0.1), P(0, ow - 0.03, 0.1), P(depth, ow - 0.03, 0.1), P(depth, -ow + 0.03, 0.1)], rgb(0x4a4d52));
+    for (const [a0, a1] of [
+      [-0.05, -0.15],
+      [-0.25, -0.35],
+      [-0.45, -0.52],
+    ])
+      line(g, P(a0, 0, 0.2), P(a1, 0, 0.2), 'rgba(255,255,255,0.7)', 0.6 * r);
+    // редица лампи под свода, все по-далеч и по-бледи
+    for (let i = 0; i < 6; i++) {
+      const a = -0.04 - i * 0.09;
+      const [lx, ly] = P(a, 0, oh + ow * 10);
+      g.fillStyle = `rgba(255,214,140,${0.95 - i * 0.13})`;
+      g.beginPath();
+      g.ellipse(lx, ly, 2.2 * r * (1 - i * 0.1), 0.9 * r, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    // топъл отблясък от лампите по пътя
+    const [gx, gy] = P(-0.2, 0, 0.3);
+    const glow = g.createRadialGradient(gx, gy, 0, gx, gy, 14 * r);
+    glow.addColorStop(0, 'rgba(255,200,120,0.28)');
+    glow.addColorStop(1, 'rgba(255,200,120,0)');
+    g.fillStyle = glow;
+    g.fillRect(gx - 14 * r, gy - 14 * r, 28 * r, 28 * r);
+    g.restore();
+    // рамка на свода
+    g.beginPath();
+    g.moveTo(face[1][0], face[1][1]);
+    for (const p of face.slice(2, -1)) g.lineTo(p[0], p[1]);
+    g.strokeStyle = rgb(mixc(concrete, 0x5f5b54, 0.35));
+    g.lineWidth = 1.4 * r;
+    g.stroke();
+    // табела с името над входа
+    poly(g, [P(0, -0.16, H - 5), P(0, 0.16, H - 5), P(0, 0.16, H - 2.4), P(0, -0.16, H - 2.4)], rgb(0x1f5fd6));
+    // насипът/скалата над портала – продължава в планината
+    poly(g, [P(0, -0.5, H), P(0, 0.5, H), P(-0.5, 0.5, H + 6), P(-0.5, -0.5, H + 6)], rgb(rock));
+    for (let i = 0; i < 6; i++) {
+      const b = -0.42 + i * 0.17;
+      const [x, y] = P(-0.15 - (i % 2) * 0.15, b, H + 4);
+      g.fillStyle = rgb(i % 3 === 0 ? 0x5f8a45 : rock, 0.9);
+      g.beginPath();
+      g.ellipse(x, y, 4 * r, 2 * r, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+  });
+}
+
 /** Помощните функции за variety.ts (материали, форми, паркинги, паркове). */
 const KIT: Kit = {
   box,
@@ -2012,6 +2202,16 @@ function serviceBuilding(key: Extract<BuildingKey, { k: 'service' }>, r: number)
           cylinder(g, P, r, -0.06, -0.1, 0.1, hh + 4, hh + 14, 0x7f9aa6);
         } else roof(g, P, b, hh, 'hip', pick(ROOF_TILES, t(2)), wall, 10, v);
         door(g, P, b, face, 0.5, 0.12, 10, 0x34495e);
+        // игрището: бели линии и две врати; дървета и пейки в двора
+        line(g, P(-0.16, 0.27, 0.1), P(-0.16, 0.45, 0.1), 'rgba(255,255,255,0.8)', 0.6 * r);
+        for (const gu of [-0.4, 0.08]) {
+          line(g, P(gu, 0.31, 0), P(gu, 0.31, 3.5), '#f4f4f4', 0.7 * r);
+          line(g, P(gu, 0.41, 0), P(gu, 0.41, 3.5), '#f4f4f4', 0.7 * r);
+          line(g, P(gu, 0.31, 3.5), P(gu, 0.41, 3.5), '#f4f4f4', 0.7 * r);
+        }
+        KIT.tree(g, P, r, 0.4, -0.3, v + 1, 0.8);
+        KIT.tree(g, P, r, 0.42, 0.05, v + 2, 0.7);
+        KIT.tree(g, P, r, 0.3, 0.42, v + 3, 0.75);
         return;
       }
       case 'clinic': {
@@ -2034,6 +2234,14 @@ function serviceBuilding(key: Extract<BuildingKey, { k: 'service' }>, r: number)
         g.fillText('H', cx, cy + 3 * r);
         faceQuad(g, P, 'left', b, 0.42, 0.58, hh - 9, hh - 2, '#d62d20');
         faceQuad(g, P, 'left', b, 0.47, 0.53, hh - 12, hh + 1, '#d62d20');
+        // навес за линейките и линейка пред спешното
+        box(g, P, 0.36, -0.2, 0.47, 0.1, 9, 10, { wall: 0xe8eaec, edge: false });
+        parkedCar(g, P, r, 0.42, -0.05, 0, v + 4, 'van', 0xf4f4f2);
+        const [ax, ay] = P(0.42, -0.05, 7);
+        g.fillStyle = '#d62d20';
+        g.fillRect(ax - 1.2 * r, ay - 1.2 * r, 2.4 * r, 2.4 * r);
+        KIT.tree(g, P, r, -0.42, 0.4, v + 5, 0.75);
+        KIT.tree(g, P, r, 0.1, 0.43, v + 6, 0.7);
         return;
       }
       case 'police_station':
@@ -2053,6 +2261,27 @@ function serviceBuilding(key: Extract<BuildingKey, { k: 'service' }>, r: number)
           windows(g, P, r, b, 0, hh, { glass: 0x5c7d96, density: 6, seed: v });
         }
         roof(g, P, b, hh, 'flat', 0x8c8f92, wall, 0, v);
+        if (fire) {
+          // пожарна кола пред средната врата
+          box(g, P, -0.12, 0.33, 0.12, 0.45, 0, 7, { wall: 0xc0392b, edge: false });
+          box(g, P, 0.12, 0.34, 0.2, 0.44, 0, 6, { wall: 0xa93226, top: 0x2c3e50, edge: false });
+          line(g, P(-0.1, 0.39, 7.5), P(0.1, 0.39, 8.5), '#dfe3e6', 1 * r);
+        } else {
+          parkedCar(g, P, r, -0.2, 0.4, 0, v + 7, 'police', 0xf4f6f8);
+          parkedCar(g, P, r, 0.12, 0.4, 0, v + 8, 'police', 0xf4f6f8);
+        }
+        // знаме
+        const [fx, fy] = P(0.4, 0.36, 0);
+        g.strokeStyle = '#c9ccd0';
+        g.lineWidth = 0.7 * r;
+        g.beginPath();
+        g.moveTo(fx, fy);
+        g.lineTo(fx, fy - 24 * r);
+        g.stroke();
+        for (const [i, c] of ['#ffffff', '#00966e', '#d62612'].entries()) {
+          g.fillStyle = c;
+          g.fillRect(fx, fy - 24 * r + i * 1.6 * r, 7 * r, 1.6 * r);
+        }
         return;
       }
       case 'bus_depot': {

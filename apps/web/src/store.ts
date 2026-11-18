@@ -23,6 +23,8 @@ export interface CityDetail {
   stats?: Partial<CityStats> & { retailDemand?: Record<string, number> };
   receivership?: boolean;
   deficitDays?: number;
+  /** Граница с други градове: докато няма магистрала от поне min плочки до всеки съсед, се строи само магистрала. */
+  border?: { neighbors: { id: string; name: string }[]; linked: string[]; longest: number; blocked: boolean; min: number };
   publicStats: Record<string, unknown>;
   publicPolicy: { taxes: CityPolicy['taxes']; importTariff: number };
 }

@@ -160,7 +160,7 @@ describe('E2E: пълен път на играча', () => {
     const w = getWorld('integration-seed');
     let placed = false;
     for (let x = 0; x < 24 && !placed; x++)
-      for (const dy of [8, 12]) {
+      for (const dy of [9, 11]) {
         if (placed) break;
         const tx = ox + x;
         const ty = oy + dy;
@@ -169,7 +169,7 @@ describe('E2E: пълен път на играча', () => {
         if (r.status === 201) placed = true;
       }
     if (!placed) {
-      const spot = Array.from({ length: 24 }, (_, i) => ({ x: ox + i, y: oy + 12 })).find((t) => w.buildable(t.x, t.y))!;
+      const spot = Array.from({ length: 8 }, (_, i) => ({ x: ox + 16 + i, y: oy + 9 })).find((t) => w.buildable(t.x, t.y))!;
       const r = await call('POST', `/companies/${A.companyId}/facilities`, A.token, { cityId: A.cityId, type: 'warehouse', x: spot.x, y: spot.y });
       expect(r.status).toBe(201);
     }

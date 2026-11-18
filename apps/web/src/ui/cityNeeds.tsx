@@ -3,7 +3,7 @@
  * директно избира правилния инструмент/слой/панел. Смята се само от данните на града в браузъра.
  */
 import { SERVICES, ZONES, type MoodFactor, type TileMap, type ZoneType } from '@gce/shared';
-import { setState, useStore, type CoverageOf, type Layer, type Tool } from '../store';
+import { setState, useStore, type CityDetail, type CoverageOf, type Layer, type Tool } from '../store';
 import { CORE_KINDS, COVERAGE_ICON, coverageView } from '../map/coverage';
 import { money, num, pct } from '../format';
 import { Section } from './common';
@@ -38,10 +38,27 @@ type S = {
 
 const ZONE_ICON: Record<ZoneType, string> = { R: '🏠', C: '🛍', I: '🏭', O: '🏢', A: '🌾', L: '📦', H: '🔬' };
 
-export function cityNeeds(city: { tiles: unknown; parcels: { px: number; py: number }[]; stats?: unknown; treasury?: number }, openIssues: number): Need[] {
+export function cityNeeds(
+  city: { tiles: unknown; parcels: { px: number; py: number }[]; stats?: unknown; treasury?: number; border?: CityDetail['border'] },
+  openIssues: number,
+): Need[] {
   const s = (city.stats ?? {}) as S;
   const tiles = city.tiles as TileMap;
   const out: Need[] = [];
+  const bd = city.border;
+  if (bd?.blocked) {
+    const names = bd.neighbors.filter((n) => !bd.linked.includes(n.id)).map((n) => `„${n.name}“`);
+    return [
+      {
+        level: 3,
+        icon: '🛣',
+        text: `Магистрала до ${names.join(', ')}`,
+        why: `Градът опря до съседен град. Градовете се свързват само с градска магистрала от поне ${bd.min} плочки до границата – дотогава не може да се строи нищо друго (сега: ${bd.longest}).`,
+        button: '🚀 Магистрала',
+        tool: { kind: 'road', cls: 'highway' },
+      },
+    ];
+  }
   const pop = s.population ?? 0;
   const hasRoad = Object.values(tiles).some((t) => t.t === 'road');
   if (!hasRoad) return [{ level: 3, icon: '🛣', text: 'Първа улица', why: 'Всичко в града се строи до път.', button: 'Строй улица', tool: { kind: 'road', cls: 'street' } }];
