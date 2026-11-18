@@ -1983,6 +1983,358 @@ function tunnelPortal(key: Extract<BuildingKey, { k: 'tunnel' }>, r: number): Sp
   });
 }
 
+/** Ограда от метална мрежа по ръба на парцела (без предната страна при open). */
+function fence(g: Ctx, P: P3, r: number, e = 0.47, open = false) {
+  const c = 'rgba(70,78,86,0.75)';
+  const sides: [number, number, number, number][] = [
+    [-e, -e, e, -e],
+    [-e, -e, -e, e],
+    [e, -e, e, e],
+  ];
+  if (!open) sides.push([-e, e, e, e]);
+  for (const [u0, v0, u1, v1] of sides) {
+    line(g, P(u0, v0, 4), P(u1, v1, 4), c, 0.5 * r);
+    for (let i = 0; i <= 8; i++) {
+      const u = u0 + ((u1 - u0) * i) / 8;
+      const w = v0 + ((v1 - v0) * i) / 8;
+      line(g, P(u, w, 0), P(u, w, 4.2), c, 0.5 * r);
+    }
+  }
+}
+
+/** Автобус (кутия с ленти прозорци) по оста u или v. */
+function bus(g: Ctx, P: P3, u: number, v: number, alongU: boolean, color: number) {
+  const L = 0.2;
+  const W = 0.055;
+  const [a0, a1, b0, b1] = alongU ? [u - L, u + L, v - W, v + W] : [u - W, u + W, v - L, v + L];
+  poly(g, [P(a0 + 0.03, b0 + 0.03, 0), P(a1 + 0.05, b0 + 0.03, 0), P(a1 + 0.05, b1 + 0.04, 0), P(a0 + 0.03, b1 + 0.04, 0)], 'rgba(0,0,0,0.25)');
+  box(g, P, a0, b0, a1, b1, 0.6, 8, { wall: color, top: 0xe9ecef, edge: false });
+  const bb: [number, number, number, number] = [a0, b0, a1, b1];
+  for (const f of ['left', 'right'] as Face[]) faceQuad(g, P, f, bb, 0.04, 0.96, 4, 6.8, rgb(0x2d3e4c, f === 'left' ? 0.95 : 0.75));
+  faceQuad(g, P, alongU ? 'left' : 'right', bb, 0.04, 0.96, 1.2, 1.9, 'rgba(255,255,255,0.55)');
+}
+
+/**
+ * Обществените и комуналните сгради в по-реалистичен вид (централи, помпена станция, пречиствателна,
+ * сметище, болница, пожарна, автобусно депо). Връща false за останалите – те се рисуват както досега.
+ */
+function utilityBuilding(g: Ctx, P: P3, r: number, s: string, v: number): boolean {
+  const t = (n: number) => h01(v, n, 141);
+  const lot = (c: number, e = 0.49) => poly(g, [P(-e, -e, 0), P(e, -e, 0), P(e, e, 0), P(-e, e, 0)], rgb(c));
+  switch (s) {
+    case 'power_coal': {
+      // ТЕЦ: въглищен склад с лентов транспортьор, котелно и машинна зала, две охладителни кули, висок комин
+      lot(0x7f7c75);
+      poly(g, [P(0.12, 0.18, 0), P(0.47, 0.18, 0), P(0.47, 0.47, 0), P(0.12, 0.47, 0)], rgb(0x6b6862));
+      const [cx, cy] = P(0.3, 0.33, 0);
+      g.fillStyle = '#26272a';
+      g.beginPath();
+      g.ellipse(cx, cy - 2 * r, 15 * r, 8 * r, 0, Math.PI, 0);
+      g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.08)';
+      g.beginPath();
+      g.ellipse(cx - 4 * r, cy - 5 * r, 6 * r, 2 * r, 0, 0, Math.PI * 2);
+      g.fill();
+      cylinder(g, P, r, -0.28, -0.26, 0.17, 0, 54, 0xcfcbc3, 0.3);
+      cylinder(g, P, r, 0.02, -0.34, 0.15, 0, 48, 0xd5d1c9, 0.3);
+      const hall: [number, number, number, number] = [-0.42, 0.0, 0.1, 0.42];
+      shadow(g, P, hall[0], hall[1], hall[2], hall[3], 30);
+      box(g, P, hall[0], hall[1], hall[2], hall[3], 0, 18, { wall: 0xa9a59c });
+      corrugate(g, P, hall, 0, 12, r);
+      for (const f of ['left', 'right'] as Face[]) faceQuad(g, P, f, hall, 0.05, 0.95, 12, 16, rgb(0x7f97a8, f === 'left' ? 0.95 : 0.72));
+      roof(g, P, hall, 18, 'gable', 0x6f7377, 0xa9a59c, 5, v);
+      const boiler: [number, number, number, number] = [-0.3, 0.06, -0.06, 0.26];
+      box(g, P, boiler[0], boiler[1], boiler[2], boiler[3], 18, 34, { wall: 0x9a968d });
+      windows(g, P, r, boiler, 18, 34, { glass: 0x6f8797, band: true, seed: v });
+      roof(g, P, boiler, 34, 'flat', 0x6c6a66, 0x9a968d, 0, v);
+      // транспортьор от склада до котелното
+      line(g, P(0.22, 0.25, 2), P(-0.08, 0.16, 28), '#5b5f63', 2 * r);
+      line(g, P(0.22, 0.25, 3), P(-0.08, 0.16, 29), '#8a8f94', 0.8 * r);
+      // комин на червени и бели пояси
+      for (let z = 0; z < 96; z += 12) cylinder(g, P, r, 0.36, -0.36, 0.045, z, z + 12, (z / 12) % 2 ? 0xf2f2f0 : 0xc0392b);
+      const [sx, sy] = P(0.36, -0.36, 98);
+      for (let i = 0; i < 5; i++) {
+        g.beginPath();
+        g.arc(sx + i * 6 * r, sy - i * 7 * r, (4 + i * 2.2) * r, 0, Math.PI * 2);
+        g.fillStyle = `rgba(200,200,200,${0.5 - i * 0.09})`;
+        g.fill();
+      }
+      return true;
+    }
+    case 'power_wind': {
+      // модерна вятърна турбина: конусна кула, гондола, три извити лопатки; трафопост и чакълена площадка
+      lot(0x8fb36a);
+      poly(g, [P(-0.2, -0.2, 0), P(0.2, -0.2, 0), P(0.2, 0.2, 0), P(-0.2, 0.2, 0)], rgb(0xb3ad9f));
+      line(g, P(0.2, 0, 0.1), P(0.49, 0, 0.1), rgb(0xb3ad9f), 4 * r);
+      box(g, P, 0.24, 0.2, 0.36, 0.3, 0, 6, { wall: 0xe0ddd6, top: 0x9aa0a6 });
+      const [bx, by] = P(0, 0, 0);
+      const Ht = 92 * r;
+      g.fillStyle = 'rgba(0,0,0,0.18)';
+      g.beginPath();
+      g.ellipse(bx + 30 * r, by + 6 * r, 34 * r, 4 * r, 0.12, 0, Math.PI * 2);
+      g.fill();
+      const tower = g.createLinearGradient(bx - 3 * r, 0, bx + 3 * r, 0);
+      tower.addColorStop(0, '#d9dde0');
+      tower.addColorStop(0.45, '#ffffff');
+      tower.addColorStop(1, '#aeb4b9');
+      g.fillStyle = tower;
+      g.beginPath();
+      g.moveTo(bx - 3 * r, by);
+      g.lineTo(bx - 1.2 * r, by - Ht);
+      g.lineTo(bx + 1.2 * r, by - Ht);
+      g.lineTo(bx + 3 * r, by);
+      g.closePath();
+      g.fill();
+      // гондола
+      g.fillStyle = '#eef1f3';
+      g.beginPath();
+      g.ellipse(bx + 2 * r, by - Ht - 1 * r, 6 * r, 2.6 * r, -0.25, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#c9ced2';
+      g.beginPath();
+      g.ellipse(bx + 4 * r, by - Ht, 4 * r, 1.6 * r, -0.25, 0, Math.PI);
+      g.fill();
+      const hx = bx - 3 * r;
+      const hy = by - Ht - 1 * r;
+      const a0 = h01(v, 1) * Math.PI * 2;
+      for (let i = 0; i < 3; i++) {
+        const a = a0 + (i * Math.PI * 2) / 3;
+        const L = 36 * r;
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        g.fillStyle = i === 0 ? '#ffffff' : '#f1f3f4';
+        g.beginPath();
+        g.moveTo(hx - sa * 1.6 * r, hy + ca * 1.6 * r);
+        g.quadraticCurveTo(hx + ca * L * 0.5 - sa * 2.6 * r, hy + sa * L * 0.5 + ca * 2.6 * r, hx + ca * L, hy + sa * L);
+        g.quadraticCurveTo(hx + ca * L * 0.5 + sa * 0.6 * r, hy + sa * L * 0.5 - ca * 0.6 * r, hx + sa * 1.2 * r, hy - ca * 1.2 * r);
+        g.closePath();
+        g.fill();
+        g.strokeStyle = 'rgba(120,130,140,0.35)';
+        g.lineWidth = 0.4 * r;
+        g.stroke();
+      }
+      g.fillStyle = '#dfe3e6';
+      g.beginPath();
+      g.arc(hx, hy, 2.4 * r, 0, Math.PI * 2);
+      g.fill();
+      return true;
+    }
+    case 'water_pump': {
+      // помпена станция: тухлена сграда с високи прозорци, водна кула на крака, тръби, ограда
+      lot(0x9aa58e);
+      poly(g, [P(-0.47, -0.47, 0), P(0.47, -0.47, 0), P(0.47, 0.47, 0), P(-0.47, 0.47, 0)], rgb(0xb7b2a6));
+      fence(g, P, r, 0.47, true);
+      const b: [number, number, number, number] = [-0.38, -0.05, 0.05, 0.36];
+      shadow(g, P, b[0], b[1], b[2], b[3], 18);
+      box(g, P, b[0], b[1], b[2], b[3], 0, 15, { wall: 0xa65b3f });
+      windows(g, P, r, b, 0, 15, { glass: 0x6f8aa0, frame: 0xf3eee4, density: 5, w: 0.4, hgt: 0.75, seed: v, lit: 0.1, noSlabs: true });
+      roof(g, P, b, 15, 'gable', 0x51606b, 0xa65b3f, 7, v);
+      // тръби навън към реката/резервоара
+      for (const w of [0.06, 0.16]) line(g, P(0.05, w, 2.5), P(0.47, w, 2.5), rgb(0x2e86c1), 2.2 * r);
+      // водна кула: резервоар на четири крака
+      const [tu, tv] = [0.24, -0.26];
+      for (const [du, dv] of [
+        [-0.08, -0.08],
+        [0.08, -0.08],
+        [-0.08, 0.08],
+        [0.08, 0.08],
+      ])
+        line(g, P(tu + du, tv + dv, 0), P(tu + du * 0.7, tv + dv * 0.7, 30), '#7d858c', 1 * r);
+      line(g, P(tu - 0.08, tv + 0.08, 10), P(tu + 0.08, tv + 0.08, 20), '#7d858c', 0.5 * r);
+      cylinder(g, P, r, tu, tv, 0.13, 30, 44, 0x8fb3c8);
+      cylinder(g, P, r, tu, tv, 0.06, 44, 48, 0x7aa2b8);
+      return true;
+    }
+    case 'sewage_plant': {
+      // пречиствателна: правоъгълни утаители, два кръгли с въртящ се мост, аериране, сграда, дървета
+      lot(0xa8a59c);
+      for (let i = 0; i < 2; i++) {
+        const b: [number, number, number, number] = [-0.44, -0.44 + i * 0.22, 0.02, -0.26 + i * 0.22];
+        box(g, P, b[0], b[1], b[2], b[3], 0, 3.5, { wall: 0xc4c0b7, top: 0xc4c0b7, edge: false });
+        poly(g, [P(b[0] + 0.02, b[1] + 0.02, 3.6), P(b[2] - 0.02, b[1] + 0.02, 3.6), P(b[2] - 0.02, b[3] - 0.02, 3.6), P(b[0] + 0.02, b[3] - 0.02, 3.6)], rgb(i ? 0x6f8f62 : 0x7a8a58));
+        for (let k = 0; k < 6; k++) {
+          const [x, y] = P(b[0] + 0.06 + k * 0.07, (b[1] + b[3]) / 2, 3.7);
+          g.fillStyle = 'rgba(255,255,255,0.35)';
+          g.beginPath();
+          g.arc(x, y, 1.1 * r, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      for (const [u, w] of [
+        [0.26, -0.26],
+        [0.26, 0.2],
+      ]) {
+        cylinder(g, P, r, u, w, 0.17, 0, 4, 0xc9c5bc);
+        const [cx, cy] = P(u, w, 4.1);
+        g.beginPath();
+        g.ellipse(cx, cy, 14.5 * r, 7.2 * r, 0, 0, Math.PI * 2);
+        g.fillStyle = '#5f7f6c';
+        g.fill();
+        g.beginPath();
+        g.ellipse(cx, cy, 3 * r, 1.5 * r, 0, 0, Math.PI * 2);
+        g.fillStyle = '#c9c5bc';
+        g.fill();
+        line(g, P(u - 0.16, w, 6), P(u + 0.16, w, 6), '#e3e5e8', 1.2 * r);
+      }
+      const ob: [number, number, number, number] = [-0.42, 0.12, -0.12, 0.42];
+      box(g, P, ob[0], ob[1], ob[2], ob[3], 0, 12, { wall: 0xe4e1da });
+      windows(g, P, r, ob, 0, 12, { glass: 0x6f8aa0, density: 6, seed: v });
+      roof(g, P, ob, 12, 'flat', 0x8c8f92, 0xe4e1da, 0, v);
+      KIT.tree(g, P, r, 0.0, 0.44, v + 1, 0.7);
+      return true;
+    }
+    case 'landfill': {
+      // сметище: ограда, терасирани купчини (част вече покрити с пръст и трева), булдозер, самосвал, гларуси
+      lot(0x9a8a6c);
+      fence(g, P, r, 0.47, true);
+      // терасирани клетки: старата – покрита с пръст и трева, активната – с боклук
+      const cell = (b: [number, number, number, number], z0: number, z1: number, top: number, trash: boolean, seed: number) => {
+        box(g, P, b[0], b[1], b[2], b[3], z0, z1, { wall: 0x8a7458, top, edge: false });
+        if (!trash) return;
+        for (let k = 0; k < 26; k++) {
+          const u = b[0] + 0.02 + h01(seed, k, 1) * (b[2] - b[0] - 0.04);
+          const w = b[1] + 0.02 + h01(seed, k, 2) * (b[3] - b[1] - 0.04);
+          const [x, y] = P(u, w, z1 + 0.1);
+          g.fillStyle = rgb(pick([0xd35400, 0x2e86c1, 0xecf0f1, 0x27ae60, 0xf1c40f, 0x5d6d7e, 0x8e44ad], h01(seed, k, 3)));
+          g.fillRect(x, y, 1.6 * r, 1 * r);
+        }
+      };
+      cell([-0.42, -0.42, 0.12, 0.0], 0, 7, 0x7a9a50, false, v);
+      cell([-0.34, -0.36, 0.04, -0.08], 7, 11, 0x86a65a, false, v + 1);
+      cell([0.14, -0.42, 0.42, 0.06], 0, 5, 0x8a7a5c, true, v + 2);
+      cell([-0.42, 0.04, 0.0, 0.28], 0, 3.5, 0x8a7a5c, true, v + 3);
+      // газоотвеждащи тръби на старата клетка
+      for (const [u, w] of [
+        [-0.25, -0.25],
+        [-0.05, -0.18],
+      ])
+        line(g, P(u, w, 11), P(u, w, 15), '#5d6166', 1.2 * r);
+      // булдозер и самосвал
+      box(g, P, 0.2, 0.18, 0.3, 0.26, 0, 4, { wall: 0xf1c40f, edge: false });
+      box(g, P, 0.22, 0.19, 0.28, 0.25, 4, 7, { wall: 0x2c3e50, top: 0xf1c40f, edge: false });
+      box(g, P, 0.3, 0.17, 0.33, 0.27, 0, 2.5, { wall: 0x7f8c8d, edge: false });
+      box(g, P, 0.05, 0.32, 0.25, 0.42, 0, 6, { wall: 0x7f8c8d, edge: false });
+      box(g, P, 0.25, 0.32, 0.31, 0.42, 0, 5.5, { wall: 0xc0392b, edge: false });
+      // гларуси
+      g.strokeStyle = 'rgba(255,255,255,0.9)';
+      g.lineWidth = 0.6 * r;
+      for (let k = 0; k < 5; k++) {
+        const [x, y] = P(-0.3 + h01(v, k, 9) * 0.6, -0.3 + h01(v, k, 10) * 0.5, 22 + h01(v, k, 11) * 12);
+        g.beginPath();
+        g.moveTo(x - 2 * r, y - 1 * r);
+        g.quadraticCurveTo(x - 1 * r, y - 1.8 * r, x, y);
+        g.quadraticCurveTo(x + 1 * r, y - 1.8 * r, x + 2 * r, y - 1 * r);
+        g.stroke();
+      }
+      return true;
+    }
+    case 'clinic': {
+      // болница: висок главен корпус + ниско крило със спешното, червен кръст, хеликоптерна площадка,
+      // навес за линейки, паркинг и градинка
+      lot(0xcfcbc2);
+      parkingLot(KIT, g, P, r, [0.1, 0.24, 0.49, 0.49], v + 3, 0.6, true);
+      const main: [number, number, number, number] = [-0.42, -0.42, 0.04, 0.12];
+      const wing: [number, number, number, number] = [0.06, -0.36, 0.42, 0.1];
+      shadow(g, P, main[0], main[1], main[2], main[3], 70);
+      box(g, P, wing[0], wing[1], wing[2], wing[3], 0, FLOOR * 2, { wall: 0xf3f3f0 });
+      windows(g, P, r, wing, 0, FLOOR * 2, { glass: 0x86a9bd, density: 6, w: 0.7, seed: v + 1, lit: 0.2 });
+      roof(g, P, wing, FLOOR * 2, 'flat', 0xc5c9ca, 0xf3f3f0, 0, v);
+      // навес на спешното и линейка
+      box(g, P, wing[2], -0.2, wing[2] + 0.07, 0.04, 9, 10.2, { wall: 0xe03e2d, edge: false });
+      parkedCar(g, P, r, 0.46, -0.08, 0, v + 4, 'van', 0xf4f4f2);
+      box(g, P, main[0], main[1], main[2], main[3], 0, FLOOR * 6, { wall: 0xf4f4f1 });
+      windows(g, P, r, main, 0, FLOOR * 6, { glass: 0x7fa5bd, band: true, seed: v });
+      roof(g, P, main, FLOOR * 6, 'flat', 0xbfc3c4, 0xf2f2ef, 0, v);
+      for (const f of ['left', 'right'] as Face[]) {
+        faceQuad(g, P, f, main, 0.4, 0.6, FLOOR * 6 - 11, FLOOR * 6 - 2, rgb(0xffffff, f === 'left' ? 1 : 0.8));
+        faceQuad(g, P, f, main, 0.44, 0.56, FLOOR * 6 - 9, FLOOR * 6 - 4, '#d62d20');
+        faceQuad(g, P, f, main, 0.48, 0.52, FLOOR * 6 - 10.5, FLOOR * 6 - 2.5, '#d62d20');
+      }
+      const [hx, hy] = P((main[0] + main[2]) / 2, (main[1] + main[3]) / 2, FLOOR * 6 + 0.5);
+      g.beginPath();
+      g.ellipse(hx, hy, 11 * r, 5.5 * r, 0, 0, Math.PI * 2);
+      g.fillStyle = '#4b5258';
+      g.fill();
+      g.strokeStyle = '#f2c94c';
+      g.lineWidth = 0.6 * r;
+      g.stroke();
+      g.fillStyle = '#ffffff';
+      g.font = `bold ${Math.max(4, 7 * r)}px sans-serif`;
+      g.textAlign = 'center';
+      g.fillText('H', hx, hy + 2.5 * r);
+      KIT.tree(g, P, r, -0.44, 0.4, v + 5, 0.75);
+      KIT.tree(g, P, r, -0.1, 0.44, v + 6, 0.7);
+      return true;
+    }
+    case 'fire_station': {
+      // пожарна: тухлена сграда с три вдигнати врати (вътре – колите), кула за упражнения, кола отпред, знаме
+      lot(0xa9a59d);
+      const b: [number, number, number, number] = [-0.4, -0.36, 0.26, 0.2];
+      shadow(g, P, b[0], b[1], b[2], b[3], 30);
+      const tower: [number, number, number, number] = [0.08, -0.42, 0.24, -0.26];
+      box(g, P, tower[0], tower[1], tower[2], tower[3], 0, 52, { wall: 0xa94a35 });
+      windows(g, P, r, tower, 0, 52, { glass: 0x445866, density: 4, w: 0.5, seed: v, noSlabs: true });
+      roof(g, P, tower, 52, 'flat', 0x6c6a66, 0xa94a35, 0, v);
+      box(g, P, b[0], b[1], b[2], b[3], 0, FLOOR * 2 + 2, { wall: 0xb3533c });
+      for (let z = 1.6; z < FLOOR * 2; z += 1.8) faceQuad(g, P, 'left', b, 0, 1, z, z + 0.25, 'rgba(60,30,20,0.13)');
+      for (let i = 0; i < 3; i++) {
+        const s0 = 0.06 + i * 0.31;
+        faceQuad(g, P, 'left', b, s0, s0 + 0.26, 0, 13, rgb(0x2b2d30));
+        faceQuad(g, P, 'left', b, s0 + 0.02, s0 + 0.24, 4, 12, rgb(0xc0392b, 0.85));
+        faceQuad(g, P, 'left', b, s0 + 0.04, s0 + 0.22, 8.5, 11, rgb(0x2d3e4c, 0.9));
+      }
+      windows(g, P, r, b, FLOOR + 3, FLOOR * 2 + 2, { glass: 0x5c7d96, density: 6, seed: v + 2, fromFloor: 0 });
+      faceQuad(g, P, 'left', b, 0.25, 0.75, FLOOR * 2 - 3, FLOOR * 2 + 0.5, rgb(0xf3eee4));
+      roof(g, P, b, FLOOR * 2 + 2, 'flat', 0x7c7f82, 0xb3533c, 0, v);
+      // кола пред вратата: кабина, цистерна, стълба
+      box(g, P, -0.1, 0.27, 0.14, 0.4, 0, 7, { wall: 0xc0392b, top: 0xb0b6bb, edge: false });
+      box(g, P, 0.14, 0.28, 0.22, 0.39, 0, 6.5, { wall: 0xa93226, top: 0x2c3e50, edge: false });
+      faceQuad(g, P, 'left', [-0.1, 0.27, 0.14, 0.4], 0.02, 0.98, 2.5, 3.3, 'rgba(255,255,255,0.8)');
+      line(g, P(-0.08, 0.33, 7.6), P(0.12, 0.33, 8.6), '#dfe3e6', 1.1 * r);
+      line(g, P(-0.08, 0.36, 7.6), P(0.12, 0.36, 8.6), '#dfe3e6', 1.1 * r);
+      const [fx, fy] = P(0.42, 0.38, 0);
+      g.strokeStyle = '#c9ccd0';
+      g.lineWidth = 0.7 * r;
+      g.beginPath();
+      g.moveTo(fx, fy);
+      g.lineTo(fx, fy - 26 * r);
+      g.stroke();
+      for (const [i, c] of ['#ffffff', '#00966e', '#d62612'].entries()) {
+        g.fillStyle = c;
+        g.fillRect(fx, fy - 26 * r + i * 1.6 * r, 7 * r, 1.6 * r);
+      }
+      return true;
+    }
+    case 'bus_depot': {
+      // автобусно депо: хале със заоблен покрив и отворени клетки, автобуси на площадката, офис, колонка
+      lot(0x6f7174);
+      for (let i = 0; i < 5; i++) line(g, P(-0.45, 0.14 + i * 0.07, 0.05), P(0.1, 0.14 + i * 0.07, 0.05), 'rgba(255,255,255,0.5)', 0.4 * r);
+      const hall: [number, number, number, number] = [-0.44, -0.44, 0.2, 0.06];
+      shadow(g, P, hall[0], hall[1], hall[2], hall[3], 20);
+      box(g, P, hall[0], hall[1], hall[2], hall[3], 0, 14, { wall: 0xd7d3cb });
+      for (let i = 0; i < 4; i++) faceQuad(g, P, 'left', hall, 0.04 + i * 0.24, 0.24 + i * 0.24, 0, 11, rgb(0x34383d, 0.95));
+      // заоблен покрив – ленти
+      for (let k = 0; k < 6; k++) {
+        const z = 14 + Math.sin((k / 5) * Math.PI) * 6;
+        const v0 = hall[1] + ((hall[3] - hall[1]) * k) / 6;
+        const v1 = hall[1] + ((hall[3] - hall[1]) * (k + 1)) / 6;
+        const z1 = 14 + Math.sin(((k + 1) / 5) * Math.PI) * 6;
+        poly(g, [P(hall[0], v0, z), P(hall[2], v0, z), P(hall[2], v1, z1), P(hall[0], v1, z1)], rgb(0x8c9196, 1.05 - k * 0.04));
+      }
+      faceQuad(g, P, 'left', hall, 0.3, 0.7, 11.5, 13.5, rgb(0x1f6fb2));
+      const cols = [0xf1c40f, 0x2e86c1, 0xe74c3c, 0x27ae60];
+      for (let i = 0; i < 3; i++) bus(g, P, -0.18, 0.17 + i * 0.1, true, cols[Math.floor(h01(v, i, 5) * cols.length)]);
+      bus(g, P, 0.36, 0.18, false, cols[Math.floor(t(6) * cols.length)]);
+      const off: [number, number, number, number] = [0.26, -0.44, 0.46, -0.2];
+      box(g, P, off[0], off[1], off[2], off[3], 0, FLOOR * 2, { wall: 0xe8e5de });
+      windows(g, P, r, off, 0, FLOOR * 2, { glass: 0x6f8aa0, density: 6, seed: v });
+      roof(g, P, off, FLOOR * 2, 'flat', 0x8c8f92, 0xe8e5de, 0, v);
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Помощните функции за variety.ts (материали, форми, паркинги, паркове). */
 const KIT: Kit = {
   box,
@@ -1993,7 +2345,8 @@ const KIT: Kit = {
   line,
   cylinder: (g, P, r, u, v, rad, z0, z1, color) => cylinder(g, P, r, u, v, rad, z0, z1, color),
   tree: (g, P, r, u, v, seed, size) => {
-    const kinds: TreeKind[] = ['oak', 'oak', 'birch', 'poplar', 'willow', 'conifer'];
+    // широколистни (в града и парковете) – иглолистните са в горите
+    const kinds: TreeKind[] = ['oak', 'oak', 'birch', 'poplar', 'willow', 'oak'];
     const sp = getSprite({ k: 'tree', t: kinds[Math.floor(h01(seed, 86) * kinds.length)], v: seed % 40, size, sn: SEASON }, r);
     const [px, py] = P(u, v, 0);
     g.drawImage(sp.canvas, px - sp.ax, py - sp.ay);
@@ -2150,6 +2503,7 @@ function serviceBuilding(key: Extract<BuildingKey, { k: 'service' }>, r: number)
   const t = (n: number) => h01(v, n);
   return makeSprite(r, 120, (g, P) => {
     const lot = (c: number) => poly(g, [P(-0.48, -0.48, 0), P(0.48, -0.48, 0), P(0.48, 0.48, 0), P(-0.48, 0.48, 0)], rgb(c));
+    if (utilityBuilding(g, P, r, s, v)) return;
     switch (s) {
       case 'parking': {
         // открит паркинг: асфалт до ръба (съседните паркинги се сливат), два реда места с паркирани коли, табела „P“

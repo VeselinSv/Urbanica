@@ -434,10 +434,68 @@ function paintTileRoads(g: Ctx, roads: RoadTile[], detail: number) {
     const cy = r.y + 0.5;
     if (r.n === 2 && !r.t.j) {
       const kind = roadPath(g, r);
-      if (cls === 'avenue' || cls === 'highway') {
+      if (cls === 'highway') {
+        // магистрала като истинската: зелена разделителна ивица с двойна мантинела, плътни крайни линии
+        g.lineWidth = 0.11;
+        g.strokeStyle = rgb(0x6f8f4a);
+        g.stroke();
+        g.lineWidth = 0.13;
+        g.strokeStyle = 'rgba(205,210,214,0.9)';
+        g.setLineDash([]);
+        g.save();
+        g.lineWidth = 0.014;
+        for (const s of [-1, 1]) {
+          g.translate(0, 0);
+          if (kind === 'straight') {
+            const horiz = r.arms[0] || r.arms[2];
+            g.beginPath();
+            if (horiz) {
+              g.moveTo(r.x, cy + s * 0.05);
+              g.lineTo(r.x + 1, cy + s * 0.05);
+            } else {
+              g.moveTo(cx + s * 0.05, r.y);
+              g.lineTo(cx + s * 0.05, r.y + 1);
+            }
+            g.strokeStyle = 'rgba(214,219,223,0.95)';
+            g.stroke();
+            // плътни линии до аварийната лента
+            g.beginPath();
+            if (horiz) {
+              g.moveTo(r.x, cy + s * st.width * 0.44);
+              g.lineTo(r.x + 1, cy + s * st.width * 0.44);
+            } else {
+              g.moveTo(cx + s * st.width * 0.44, r.y);
+              g.lineTo(cx + s * st.width * 0.44, r.y + 1);
+            }
+            g.lineWidth = 0.022;
+            g.strokeStyle = rgb(C.marking, 1, 0.9);
+            g.stroke();
+            g.lineWidth = 0.014;
+          }
+        }
+        g.restore();
+        if (kind === 'straight') {
+          const horiz = r.arms[0] || r.arms[2];
+          for (const s of [-1, 1]) {
+            g.beginPath();
+            if (horiz) {
+              g.moveTo(r.x, cy + s * st.width * 0.25);
+              g.lineTo(r.x + 1, cy + s * st.width * 0.25);
+            } else {
+              g.moveTo(cx + s * st.width * 0.25, r.y);
+              g.lineTo(cx + s * st.width * 0.25, r.y + 1);
+            }
+            g.lineWidth = 0.022;
+            g.strokeStyle = rgb(C.marking, 1, 0.85);
+            g.setLineDash([0.16, 0.2]);
+            g.stroke();
+            g.setLineDash([]);
+          }
+        }
+      } else if (cls === 'avenue') {
         // разделителна ивица + ленти
-        g.lineWidth = cls === 'avenue' ? 0.08 : 0.06;
-        g.strokeStyle = rgb(cls === 'avenue' ? C.median : 0xd8d8d2);
+        g.lineWidth = 0.08;
+        g.strokeStyle = rgb(C.median);
         g.stroke();
         if (kind === 'straight') {
           const horiz = r.arms[0] || r.arms[2];

@@ -94,7 +94,7 @@ export function linkEnd(
   parcels: { px: number; py: number }[],
   c: { originX: number; originY: number },
   toward: { originX: number; originY: number },
-): { gate: { x: number; y: number }; exit: { x: number; y: number } } {
+): { gate: { x: number; y: number }; exit: { x: number; y: number }; branch: { x: number; y: number } | null } {
   const S = BALANCE.world.parcelSize;
   const own = new Set(parcels.map((p) => `${p.px},${p.py}`));
   const inside = (x: number, y: number) => own.has(`${Math.floor(x / S)},${Math.floor(y / S)}`);
@@ -108,6 +108,24 @@ export function linkEnd(
     if (d < best) {
       best = d;
       exit = { x, y };
+    }
+  }
+  // разклонение: втори път в града (поне на 4 плочки от главния вход), към който магистралата се разделя
+  let branch: { x: number; y: number } | null = null;
+  let bestB = Infinity;
+  for (const [k, t] of Object.entries(tiles ?? {})) {
+    if (t.t !== 'road') continue;
+    const [x, y] = k.split(',').map(Number);
+    if (Math.hypot(x - exit.x, y - exit.y) < 4) continue;
+    // встрани от главната посока (иначе не е разклонение, а същият път)
+    const mx = toward.originX - exit.x;
+    const my = toward.originY - exit.y;
+    const ml = Math.hypot(mx, my) || 1;
+    if (Math.abs(((x - exit.x) * my - (y - exit.y) * mx) / ml) < 2) continue;
+    const d = Math.hypot(toward.originX - x, toward.originY - y) + (rank[t.c ?? 'street'] ?? 3) * 3;
+    if (d < bestB) {
+      bestB = d;
+      branch = { x, y };
     }
   }
   // от изхода към другия град – до първата точка извън територията
@@ -124,7 +142,7 @@ export function linkEnd(
     }
   // възелът – малко извън границата
   gate = { x: Math.round(gate.x + (dx / L) * 2), y: Math.round(gate.y + (dy / L) * 2) };
-  return { gate, exit };
+  return { gate, exit, branch };
 }
 
 /** Множител на превоза между два града (по-евтино при магистрала). */

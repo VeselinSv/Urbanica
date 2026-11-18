@@ -50,6 +50,7 @@ export interface LinkEnd {
   originY: number;
   gate?: { x: number; y: number };
   exit?: { x: number; y: number };
+  branch?: { x: number; y: number } | null;
 }
 export interface LinkView {
   a: LinkEnd;
@@ -205,53 +206,84 @@ export class IsoRenderer {
     if (this.life) this.life.traffic.snowing = w === 'snow';
   }
   /**
-   * Магистрали между градовете – като истинските около София: магистралата не минава през града, а спира на
-   * пътен възел точно извън територията (кръгово кръстовище с отбивки), откъдето рампа влиза до най-близкия
-   * голям път на града.
+   * Магистрали между градовете – като истинските: две платна с по две ленти, зелена разделителна ивица с
+   * мантинели, аварийни ленти с плътни линии. На ръба на града магистралата не минава през него, а се
+   * свързва направо с най-близкия голям градски път и там се разклонява – второ отклонение към друг път.
    */
   setLinks(links: LinkView[]) {
     const g = this.linkLayer;
     g.clear();
-    const pt = (p: { x: number; y: number }) => toScreen(p.x + 0.5, p.y + 0.5);
-    const ends = (l: LinkView) => [l.a, l.b].map((e) => ({ gate: pt(e.gate ?? { x: e.originX, y: e.originY }), exit: pt(e.exit ?? { x: e.originX, y: e.originY }) }));
-    // насип/сянка, асфалт, банкети, разделителна ивица
-    for (const pass of [0, 1, 2, 3]) {
-      for (const l of links) {
-        const [a, b] = ends(l);
-        // главното трасе между двата възела
-        g.moveTo(a.gate.x, a.gate.y).lineTo(b.gate.x, b.gate.y);
-        if (pass === 0) g.stroke({ width: 30, color: 0x2f3237, alpha: 0.28, cap: 'round' });
-        else if (pass === 1) g.stroke({ width: 22, color: 0x4a4d52, alpha: 0.95, cap: 'round' });
-        else if (pass === 2) g.stroke({ width: 17, color: 0x56595f, alpha: 1, cap: 'round' });
-        else g.stroke({ width: 1.4, color: 0xd9dcdf, alpha: 0.9 });
-        // рампите от възела до градския път (по-тесни)
-        for (const e of [a, b]) {
-          g.moveTo(e.gate.x, e.gate.y).lineTo(e.exit.x, e.exit.y);
-          if (pass === 0) g.stroke({ width: 16, color: 0x2f3237, alpha: 0.25, cap: 'round' });
-          else if (pass === 1) g.stroke({ width: 11, color: 0x4f5257, alpha: 0.95, cap: 'round' });
-          else if (pass === 3) g.stroke({ width: 0.9, color: 0xffffff, alpha: 0.65 });
+    type W = { x: number; y: number };
+    const sc = (p: W) => toScreen(p.x + 0.5, p.y + 0.5);
+    // отсечка в света (плочки) с отместване d по нормалата
+    const seg = (a: W, b: W, d: number): [W, W] => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const L = Math.hypot(dx, dy) || 1;
+      const nx = (-dy / L) * d;
+      const ny = (dx / L) * d;
+      return [
+        { x: a.x + nx, y: a.y + ny },
+        { x: b.x + nx, y: b.y + ny },
+      ];
+    };
+    const stroke = (a: W, b: W, d: number, width: number, color: number, alpha = 1, dash = 0) => {
+      const [p, q] = seg(a, b, d);
+      const P1 = sc(p);
+      const P2 = sc(q);
+      if (!dash) {
+        g.moveTo(P1.x, P1.y).lineTo(P2.x, P2.y).stroke({ width, color, alpha, cap: 'butt' });
+        return;
+      }
+      const L = Math.hypot(P2.x - P1.x, P2.y - P1.y);
+      const n = Math.floor(L / (dash * 2));
+      for (let i = 0; i < n; i++) {
+        const t0 = (i * dash * 2) / L;
+        const t1 = (i * dash * 2 + dash) / L;
+        g.moveTo(P1.x + (P2.x - P1.x) * t0, P1.y + (P2.y - P1.y) * t0)
+          .lineTo(P1.x + (P2.x - P1.x) * t1, P1.y + (P2.y - P1.y) * t1)
+          .stroke({ width, color, alpha });
+      }
+    };
+    /** Двупосочен път: при dual – две платна с разделителна ивица (магистрала), иначе – път с две ленти. */
+    const road = (a: W, b: W, dual: boolean) => {
+      const half = dual ? 0.62 : 0.34;
+      stroke(a, b, 0, half * 2 * 34 + 8, 0x2f3237, 0.25); // насип/сянка
+      stroke(a, b, 0, half * 2 * 34, 0x9e9a8f, 1); // банкети
+      if (dual) {
+        for (const s of [-1, 1]) {
+          stroke(a, b, s * 0.33, 17, 0x4c4f54, 1);
+          stroke(a, b, s * 0.33 + s * 0.24, 0.9, 0xf2f2f2, 0.9); // плътна крайна линия
+          stroke(a, b, s * 0.33 - s * 0.2, 0.9, 0xf2f2f2, 0.75); // до разделителната
+          stroke(a, b, s * 0.33, 0.8, 0xf2f2f2, 0.85, 7); // прекъсната между лентите
         }
+        stroke(a, b, 0, 4.2, 0x6f8f4a, 1); // зелена ивица
+        stroke(a, b, -0.05, 0.8, 0xd6dbdf, 0.95); // мантинели
+        stroke(a, b, 0.05, 0.8, 0xd6dbdf, 0.95);
+      } else {
+        stroke(a, b, 0, 21, 0x4c4f54, 1);
+        stroke(a, b, 0, 0.8, 0xf2f2f2, 0.85, 6);
+        for (const s of [-1, 1]) stroke(a, b, s * 0.28, 0.8, 0xf2f2f2, 0.8);
       }
-    }
-    // пътните възли: голямо кръгово с отбивки и зелен остров
-    for (const l of links)
-      for (const e of ends(l)) {
-        const { x, y } = e.gate;
-        g.ellipse(x, y, 30, 15).stroke({ width: 12, color: 0x4a4d52, alpha: 0.95 });
-        g.ellipse(x, y, 30, 15).stroke({ width: 1, color: 0xffffff, alpha: 0.55 });
-        g.ellipse(x, y, 23, 11.5).fill({ color: 0x6f9a4a, alpha: 0.95 });
-        g.ellipse(x - 4, y - 2, 7, 3.5).fill({ color: 0x86b25d, alpha: 0.9 });
-      }
-    // жълтите банкети по магистралата отгоре
+    };
+    const endOf = (e: LinkEnd) => ({
+      gate: e.gate ?? { x: e.originX, y: e.originY },
+      exit: e.exit ?? { x: e.originX, y: e.originY },
+      branch: e.branch ?? null,
+    });
     for (const l of links) {
-      const [a, b] = ends(l);
-      const dx = b.gate.x - a.gate.x;
-      const dy = b.gate.y - a.gate.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const nx = (-dy / len) * 9;
-      const ny = (dx / len) * 9;
-      for (const s of [-1, 1]) g.moveTo(a.gate.x + nx * s, a.gate.y + ny * s).lineTo(b.gate.x + nx * s, b.gate.y + ny * s);
-      g.stroke({ width: 1, color: 0xe8c547, alpha: 0.85 });
+      const A = endOf(l.a);
+      const B = endOf(l.b);
+      road(A.gate, B.gate, true);
+      for (const e of [A, B]) {
+        // направо към главния градски път, после разклонение към втори път
+        road(e.gate, e.exit, false);
+        if (e.branch) road(e.gate, e.branch, false);
+        // „клин“ на разклонението
+        const p = sc(e.gate);
+        g.circle(p.x, p.y, 9).fill({ color: 0x4c4f54 });
+        g.circle(p.x, p.y, 3.2).fill({ color: 0xf2f2f2, alpha: 0.6 });
+      }
     }
   }
 
