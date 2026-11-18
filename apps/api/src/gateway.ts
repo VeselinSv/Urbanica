@@ -32,7 +32,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     if (this.stopped) return;
     try {
       // LISTEN изисква директна връзка: през pooler-а (Neon/PgBouncer в transaction mode) известията не пристигат.
-      const pg = new PgClient({ connectionString: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL });
+      const pg = new PgClient(pgListenConfig(process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL || ''));
       pg.on('error', (e) => {
         this.log.warn(`pg listener error: ${e.message}; reconnecting`);
         this.pg = null;
@@ -105,5 +105,22 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     if (!(await canReceive(prisma, userId, ch))) return { ok: false };
     socket.join(`chan:${ch}`);
     return { ok: true };
+  }
+}
+
+/**
+ * Настройки за връзката на слушателя. При `sslmode=require` (Aiven, Neon) връзката е криптирана, но без проверка
+ * на сертификата – както при Prisma. Библиотеката `pg` иначе тълкува `require` като пълна проверка и отказва
+ * сертификата на Aiven (подписан от собствен CA). Параметрите, които `pg` не познава (`connection_limit`), се махат.
+ */
+export function pgListenConfig(raw: string): { connectionString: string; ssl?: { rejectUnauthorized: boolean } } {
+  try {
+    const u = new URL(raw);
+    const mode = u.searchParams.get('sslmode');
+    for (const k of ['sslmode', 'connection_limit', 'pool_timeout', 'sslaccept']) u.searchParams.delete(k);
+    const needsSsl = mode === 'require' || mode === 'prefer' || mode === 'verify-ca' || mode === 'verify-full';
+    return { connectionString: u.toString(), ...(needsSsl ? { ssl: { rejectUnauthorized: mode === 'verify-ca' || mode === 'verify-full' } } : {}) };
+  } catch {
+    return { connectionString: raw };
   }
 }
