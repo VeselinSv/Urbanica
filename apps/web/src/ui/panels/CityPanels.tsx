@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import {
   BALANCE,
@@ -20,9 +20,10 @@ import {
 } from '@gce/shared';
 import { getWorld } from '@gce/world-generation';
 import { patch, post } from '../../api';
-import { bumpData, getState, refreshAll, refreshCity, setState, toast, useStore } from '../../store';
+import { bumpData, errorToast, getState, refreshAll, refreshCity, setState, toast, useStore } from '../../store';
 import { KIND_LABELS, money, moneyExact, num, pct, toCents } from '../../format';
 import { DevPlan, bestJobZone } from '../plan';
+import { CityNeeds } from '../cityNeeds';
 import { AsyncButton, DemandBar, Field, Meter, Section, Stat, Table, useApi } from '../common';
 import { describeTile } from '../../map/MapView';
 import { REQ_ICON, reqTool, reqToolLabel } from '../needs';
@@ -72,6 +73,7 @@ export function CityPanel() {
           данъците на работещите жители, затова следете безработицата. Планът по-долу води стъпка по стъпка.
         </div>
       )}
+      <CityNeeds />
       <DevPlan />
       <div className="grid2">
         <Stat label="Население" value={num(s.population ?? 0)} />
@@ -266,7 +268,53 @@ export function FinancePanel() {
   const [p, setP] = useState<CityPolicy | null>(city?.policy ?? null);
   const [fund, setFund] = useState('');
   const [sanction, setSanction] = useState('');
-  useEffect(() => setP(city?.policy ?? null), [city?.id, city?.policy]);
+  // Градът се опреснява от сървъра на ~2.5 s. Докато играчът мести плъзгачите (и докато промяната се
+  // записва), опресняването НЕ трябва да връща старите стойности – иначе вторият плъзгач нулира първия.
+  const dirty = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [saving, setSaving] = useState<'idle' | 'pending' | 'saving'>('idle');
+  useEffect(() => {
+    if (!dirty.current) setP(city?.policy ?? null);
+  }, [city?.policy]);
+  useEffect(() => {
+    dirty.current = false;
+    if (timer.current) clearTimeout(timer.current);
+    setP(city?.policy ?? null);
+    // нарочно само при смяна на града – при всяко опресняване политиката се синхронизира от горния ефект
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [city?.id]);
+  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+  const save = async (next: CityPolicy) => {
+    if (!city) return;
+    if (timer.current) clearTimeout(timer.current);
+    setSaving('saving');
+    try {
+      await patch(`/cities/${city.id}/policy`, {
+        taxes: next.taxes,
+        serviceBudget: next.serviceBudget,
+        powerTariff: next.powerTariff,
+        waterTariff: next.waterTariff,
+        importTariff: next.importTariff,
+        subsidies: next.subsidies,
+      });
+      await refreshCity();
+      dirty.current = false;
+      setSaving('idle');
+    } catch (e) {
+      setSaving('idle');
+      dirty.current = false;
+      setP(getState().city?.policy ?? null);
+      errorToast(e);
+    }
+  };
+  /** Промяна от плъзгач: веднага на екрана, записва се автоматично 0.8 s след последното движение. */
+  const edit = (next: CityPolicy) => {
+    dirty.current = true;
+    setP(next);
+    setSaving('pending');
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => void save(next), 800);
+  };
   if (!city?.isOwner || !p) return <p className="muted">Изберете свой град.</p>;
   const s = city.stats ?? {};
   const L = BALANCE.taxes.limits;
@@ -278,7 +326,7 @@ export function FinancePanel() {
         max={max}
         step={isRate ? 0.005 : 10}
         value={p.taxes[key]}
-        onChange={(e) => setP({ ...p, taxes: { ...p.taxes, [key]: Number(e.target.value) } })}
+        onChange={(e) => edit({ ...p, taxes: { ...p.taxes, [key]: Number(e.target.value) } })}
       />
     </Field>
   );
@@ -312,16 +360,16 @@ export function FinancePanel() {
         {taxRow('resource', 'Ресурсна такса (добив)', L.resource[1])}
         {taxRow('pollution', 'Екотакса за единица замърсяване', L.pollution[1], false)}
         <Field label={`Бюджет на услугите: ${pct(p.serviceBudget, 0)}`}>
-          <input type="range" min={0.5} max={1.5} step={0.05} value={p.serviceBudget} onChange={(e) => setP({ ...p, serviceBudget: Number(e.target.value) })} />
+          <input type="range" min={0.5} max={1.5} step={0.05} value={p.serviceBudget} onChange={(e) => edit({ ...p, serviceBudget: Number(e.target.value) })} />
         </Field>
         <Field label={`Тарифа ток: ${money(p.powerTariff)}/ед.`}>
-          <input type="range" min={0} max={1000} step={10} value={p.powerTariff} onChange={(e) => setP({ ...p, powerTariff: Number(e.target.value) })} />
+          <input type="range" min={0} max={BALANCE.utilities.tariffLimits.power[1]} step={10} value={p.powerTariff} onChange={(e) => edit({ ...p, powerTariff: Number(e.target.value) })} />
         </Field>
         <Field label={`Тарифа вода: ${money(p.waterTariff)}/ед.`}>
-          <input type="range" min={0} max={300} step={5} value={p.waterTariff} onChange={(e) => setP({ ...p, waterTariff: Number(e.target.value) })} />
+          <input type="range" min={0} max={BALANCE.utilities.tariffLimits.water[1]} step={5} value={p.waterTariff} onChange={(e) => edit({ ...p, waterTariff: Number(e.target.value) })} />
         </Field>
         <Field label={`Мито при внос от други градове: ${pct(p.importTariff)}`}>
-          <input type="range" min={0} max={0.5} step={0.01} value={p.importTariff} onChange={(e) => setP({ ...p, importTariff: Number(e.target.value) })} />
+          <input type="range" min={0} max={0.5} step={0.01} value={p.importTariff} onChange={(e) => edit({ ...p, importTariff: Number(e.target.value) })} />
         </Field>
         <Field label="Субсидии по зони (€ на заета сграда/ден)">
           <div className="row wrap">
@@ -333,7 +381,7 @@ export function FinancePanel() {
                   min={0}
                   max={50}
                   value={(p.subsidies[z] ?? 0) / 100}
-                  onChange={(e) => setP({ ...p, subsidies: { ...p.subsidies, [z]: toCents(Math.max(0, Math.min(50, Number(e.target.value) || 0))) } })}
+                  onChange={(e) => edit({ ...p, subsidies: { ...p.subsidies, [z]: toCents(Math.max(0, Math.min(50, Number(e.target.value) || 0))) } })}
                 />
               </label>
             ))}
@@ -343,23 +391,20 @@ export function FinancePanel() {
           Високите данъци носят приходи, но намаляват търсенето, инвестициите и удовлетвореността. Субсидиите стимулират съответната зона срещу ежедневен
           разход.
         </p>
-        <AsyncButton
-          className="btn primary"
-          onClick={async () => {
-            await patch(`/cities/${city.id}/policy`, {
-              taxes: p.taxes,
-              serviceBudget: p.serviceBudget,
-              powerTariff: p.powerTariff,
-              waterTariff: p.waterTariff,
-              importTariff: p.importTariff,
-              subsidies: p.subsidies,
-            });
-            toast('Политиките са записани', 'success');
-            await refreshCity();
-          }}
-        >
-          Запиши политиките
-        </AsyncButton>
+        <div className="row">
+          <AsyncButton
+            className="btn primary"
+            onClick={async () => {
+              await save(p);
+              toast('Политиките са записани', 'success');
+            }}
+          >
+            Запиши политиките
+          </AsyncButton>
+          <span className="small muted" aria-live="polite">
+            {saving === 'pending' ? '● промени – записват се автоматично…' : saving === 'saving' ? 'записване…' : '✓ записано'}
+          </span>
+        </div>
       </Section>
       <Section title="Санкции (забрана за търговия с играч)">
         <div className="chips">

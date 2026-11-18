@@ -3,6 +3,8 @@ import {
   FACILITIES,
   GOODS,
   GOOD_IDS,
+  companyPolicy,
+  companyPolicyEffects,
   isMonthEnd,
   type CityPolicy,
   type FacilityType,
@@ -16,6 +18,7 @@ import { Prisma, withTx, type PrismaClient } from '@gce/database';
 import { SYS, acc, transfer, tryTransfer } from './ledger';
 import { compactHistory } from './maintenance';
 import { forgetCity, loadCityHeavy, rememberCity } from './cityCache';
+import { autoSell } from './autosell';
 import { refPrices, territoryKeys, worldGen, worldRow } from './world';
 import { addGoods, storageCapacity, storageUsed, tryTakeGoods } from './inventory';
 import { companyTechs, processLicenses, processResearch } from './research';
@@ -247,6 +250,8 @@ export async function processCompany(prisma: PrismaClient, companyId: string, ti
       const facilities = await tx.facility.findMany({ where: { companyId } });
       const cityCache = new Map<string, { pop: PopulationState; policy: CityPolicy; ownerId: string; name: string }>();
       const ceo = (await tx.companyRole.findFirst({ where: { companyId, role: 'CEO' } }))?.userId ?? company.founderId;
+      // решенията на ръководството: заплати (персонал и продуктивност), поддръжка (износване)
+      const pol = companyPolicyEffects(companyPolicy(company.policy));
       let unpaid = false;
       for (const f of facilities) {
         const type = f.type as FacilityType;
@@ -256,8 +261,10 @@ export async function processCompany(prisma: PrismaClient, companyId: string, ti
           cityCache.set(f.cityId, { pop: c.pop as unknown as PopulationState, policy: c.policy as unknown as CityPolicy, ownerId: c.ownerId, name: c.name });
         }
         const city = cityCache.get(f.cityId)!;
-        const fx = techEffects(type, techs);
-        const jobs = requiredJobs(type, fx);
+        const baseFx = techEffects(type, techs);
+        const jobs = requiredJobs(type, baseFx);
+        const fx = { ...baseFx, outputMult: baseFx.outputMult * pol.productivity };
+        const staffing = f.staffing * pol.staffMult;
         const inv = await tx.inventory.findMany({ where: { companyId, cityId: f.cityId } });
         const stock: Partial<Record<GoodId, number>> = {};
         for (const i of inv) stock[i.good as GoodId] = i.quantity;
@@ -266,7 +273,7 @@ export async function processCompany(prisma: PrismaClient, companyId: string, ti
         const placement = def.placement === 'any' ? 1 : gen.satisfiesPlacement(def.placement, f.x, f.y).factor;
         const out = produce({
           type,
-          staffing: f.staffing,
+          staffing,
           power: f.power,
           condition: f.condition,
           placementFactor: placement || 0,
@@ -293,13 +300,14 @@ export async function processCompany(prisma: PrismaClient, companyId: string, ti
         const utilization = def.storageBonus
           ? 1
           : capacity > 0
-            ? Math.max(0.3, Math.min(1, produced / Math.max(1e-9, capacity * Math.max(0.01, f.staffing))))
+            ? Math.max(0.3, Math.min(1, produced / Math.max(1e-9, capacity * Math.max(0.01, staffing))))
             : 1;
-        const wageCost = Math.round((jobs[0] * w[0] + jobs[1] * w[1] + jobs[2] * w[2]) * f.staffing * utilization);
+        const wageCost = Math.round((jobs[0] * w[0] + jobs[1] * w[1] + jobs[2] * w[2]) * staffing * utilization * pol.wageMult);
+        const upkeep = Math.round(def.upkeep * pol.upkeepMult);
         if (consumedOk) {
           const outUnits = Object.values(out.produced).reduce((a, b) => a + (b ?? 0), 0);
           for (const [g, q] of Object.entries(out.produced) as [GoodId, number][]) {
-            await addGoods(tx, companyId, f.cityId, g, q, outUnits > 0 ? (inputCost + wageCost + def.upkeep) / outUnits : refs[g]);
+            await addGoods(tx, companyId, f.cityId, g, q, outUnits > 0 ? (inputCost + wageCost + upkeep) / outUnits : refs[g]);
           }
         }
         const key = `fac:${f.id}:${tick}`;
@@ -312,7 +320,7 @@ export async function processCompany(prisma: PrismaClient, companyId: string, ti
           if (r.paid < Math.round(amount)) unpaid = true;
         };
         await pay(SYS.WORLD, wageCost, 'WAGES');
-        await pay(SYS.WORLD, def.upkeep, 'UPKEEP');
+        await pay(SYS.WORLD, upkeep, 'UPKEEP');
         await pay(acc.city(f.cityId), f.utilityCharge, 'UTILITIES');
         await pay(acc.city(f.cityId), Math.round(out.pollution * city.policy.taxes.pollution), 'POLLUTION_FEE');
         if (GOODS[Object.keys(out.produced)[0] as GoodId]?.raw) {
@@ -321,7 +329,7 @@ export async function processCompany(prisma: PrismaClient, companyId: string, ti
           await pay(acc.city(f.cityId), Math.round(rawValue * city.policy.taxes.resource), 'RESOURCE_FEE');
         }
         // Износване: по-бързо при неплатени разходи (стачки, липса на поддръжка).
-        const condition = Math.max(0.3, Math.min(1, f.condition - 0.0008 - (unpaid ? 0.03 : 0)));
+        const condition = Math.max(0.3, Math.min(1, f.condition - pol.wear - (unpaid ? 0.03 : 0)));
         await tx.facility.update({
           where: { id: f.id },
           data: { carry: out.carry, lastRuns: out.runs, lastEnergy: out.energy, limitedBy: out.limitedBy, condition },
@@ -471,6 +479,8 @@ export async function processTick(prisma: PrismaClient): Promise<TickReport> {
     for (const c of companies) if ((await processCompany(prisma, c.id, tick, refs)) === 'done') n++;
     counts.companies = n;
     await processPublicResearch(prisma, tick);
+    // автоматичните продажби на компаниите (по решение на ръководството)
+    counts.autoSell = await autoSell(prisma, tick, refs);
   });
   await time('logistics', async () => {
     counts.shipments = await deliverShipments(prisma, tick);

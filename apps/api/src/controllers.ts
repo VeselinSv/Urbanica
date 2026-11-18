@@ -10,6 +10,7 @@ import {
   FACILITIES,
   FACILITY_TYPES,
   FoundCitySchema,
+  CompanyPolicySchema,
   FoundCompanySchema,
   GOODS,
   LoanRequestSchema,
@@ -233,6 +234,11 @@ export class CompanyController {
   @Get(':id')
   get(@Param('id') id: string, @CurrentUser() user: User) {
     return D.getCompany(prisma, id, user.id);
+  }
+
+  @Patch(':id/policy')
+  policy(@Param('id') id: string, @Body() body: unknown, @CurrentUser() user: User) {
+    return D.setCompanyPolicy(prisma, user.id, id, parse(CompanyPolicySchema, body));
   }
 
   @Post(':id/facilities')

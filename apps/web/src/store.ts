@@ -55,7 +55,9 @@ export type Tool =
   | { kind: 'bulldoze' }
   | { kind: 'parcel' };
 
-export type Layer = 'none' | 'ownership' | 'resources' | 'zoning' | 'landValue' | 'traffic' | 'power' | 'water' | 'pollution' | 'activity';
+export type Layer = 'none' | 'ownership' | 'resources' | 'zoning' | 'landValue' | 'traffic' | 'power' | 'water' | 'pollution' | 'activity' | 'coverage';
+/** Чий обхват показва слоят „Обхват на услугите“: една услуга или всички основни заедно. */
+export type CoverageOf = 'all' | 'school' | 'university' | 'clinic' | 'fire_station' | 'police_station' | 'bus_depot' | 'park' | 'parking';
 
 export interface Toast {
   id: number;
@@ -91,6 +93,7 @@ export interface State {
   activeCompanyId: string | null;
   tool: Tool;
   layer: Layer;
+  coverageOf: CoverageOf;
   panel: string;
   selected: { x: number; y: number } | null;
   toasts: Toast[];
@@ -121,6 +124,7 @@ let state: State = {
   activeCompanyId: null,
   tool: { kind: 'select' },
   layer: 'none',
+  coverageOf: 'all',
   panel: 'city',
   selected: null,
   toasts: [],

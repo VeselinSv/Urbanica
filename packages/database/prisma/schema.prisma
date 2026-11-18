@@ -213,6 +213,8 @@ model Company {
   missedPayments  Int      @default(0)
   lastTick        Int      @default(-1)
   createdTick     Int      @default(0)
+  /// Решения на ръководството (заплати, поддръжка, автоматични продажби) – виж CompanyPolicy
+  policy          Json     @default("{}")
   createdAt       DateTime @default(now())
 
   @@index([founderId])

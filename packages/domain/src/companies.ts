@@ -1,4 +1,17 @@
-import { BALANCE, FACILITIES, GOOD_IDS, roleAllows, tileKey, type CompanyAction, type FacilityType, type GoodId, type TileMap } from '@gce/shared';
+import {
+  BALANCE,
+  DEFAULT_COMPANY_POLICY,
+  FACILITIES,
+  GOOD_IDS,
+  companyPolicy,
+  roleAllows,
+  tileKey,
+  type CompanyAction,
+  type CompanyPolicyInput,
+  type FacilityType,
+  type GoodId,
+  type TileMap,
+} from '@gce/shared';
 import { Prisma, isUniqueViolation, withTx, type PrismaClient, type Tx } from '@gce/database';
 import { DomainError, bad, conflict, forbidden, notFound } from './errors';
 import { SYS, acc, ensureAccount, transfer } from './ledger';
@@ -41,6 +54,8 @@ export async function foundCompany(prisma: PrismaClient, userId: string, input: 
             totalShares: BALANCE.company.defaultShares,
             createdTick: tick,
             lastTick: tick - 1,
+            // новите компании продават продукцията си автоматично на пазарна цена (решение, което може да се промени)
+            policy: { ...DEFAULT_COMPANY_POLICY, autoSell: true } as unknown as Prisma.InputJsonValue,
           },
         });
         const cAcc = await ensureAccount(tx, 'COMPANY', company.id);
@@ -273,9 +288,12 @@ export async function getCompany(prisma: PrismaClient, companyId: string, viewer
     prisma.researchProject.findMany({ where: { companyId }, orderBy: { createdAt: 'desc' } }),
     prisma.shipment.findMany({ where: { companyId, status: 'IN_TRANSIT' } }),
   ]);
+  const policy = companyPolicy(c.policy);
   return {
     ...base,
     insider: isInsider,
+    policy,
+    advice: companyAdvice({ facilities, inventory, orders, stats, policy, cash: valuation.cash }),
     cash: valuation.cash,
     valuationDetail: valuation,
     facilitiesDetail: facilities,
@@ -310,3 +328,67 @@ export async function myCompanies(prisma: PrismaClient, userId: string) {
 }
 
 export { GOOD_IDS };
+
+/** Решенията на ръководството (заплати, поддръжка, автоматични продажби) – CEO или мениджър. */
+export async function setCompanyPolicy(prisma: PrismaClient, userId: string, companyId: string, input: CompanyPolicyInput) {
+  return withTx(prisma, async (tx) => {
+    const c = await requirePermission(tx, companyId, userId, 'operate');
+    const next = companyPolicy({ ...companyPolicy(c.policy), ...input });
+    await tx.company.update({ where: { id: companyId }, data: { policy: next as unknown as Prisma.InputJsonValue } });
+    await tx.auditLog.create({ data: { userId, action: 'company.policy', details: { companyId, input } as unknown as Prisma.InputJsonValue } });
+    return next;
+  });
+}
+
+/**
+ * Защо компанията печели или губи – конкретни причини от последните дни и какво решение да се вземе.
+ * level: 3 – спешно, 2 – важно, 1 – съвет.
+ */
+export function companyAdvice(d: {
+  facilities: { type: string; staffing: number; power: number; limitedBy: string; condition: number; lastRuns: number; lastEnergy: number }[];
+  inventory: { good: string; quantity: number; reserved: number }[];
+  orders: { side: string; instrument: string }[];
+  stats: { data: unknown }[];
+  policy: ReturnType<typeof companyPolicy>;
+  cash: number;
+}): { level: 1 | 2 | 3; text: string }[] {
+  const out: { level: 1 | 2 | 3; text: string }[] = [];
+  const recent = d.stats.slice(0, 7).map((s) => s.data as { revenue?: number; costs?: number; profit?: number });
+  const profit = recent.reduce((a, s) => a + (s.profit ?? 0), 0) / Math.max(1, recent.length);
+  const revenue = recent.reduce((a, s) => a + (s.revenue ?? 0), 0) / Math.max(1, recent.length);
+  if (!d.facilities.length) return [{ level: 3, text: 'Няма съоръжения – изберете „Индустрия“ и постройте първото (ферма, мина, дъскорезница…) на подходящо място.' }];
+  if (recent.length >= 3 && profit < 0)
+    out.push({
+      level: 3,
+      text: `Губи средно ${(Math.round(-profit) / 100).toLocaleString('bg-BG')} € на ден${revenue <= 0 ? ' – още няма продажби' : ''}.`,
+    });
+  if (d.cash < 0) out.push({ level: 3, text: 'Парите свършиха – разходите не се плащат и съоръженията се износват бързо. Вземете кредит или продайте стока.' });
+  const avgStaff = d.facilities.reduce((a, f) => a + f.staffing, 0) / d.facilities.length;
+  if (avgStaff < 0.6)
+    out.push({
+      level: 2,
+      text:
+        d.policy.wageLevel < 1
+          ? `Персоналът е само ${Math.round(avgStaff * 100)}% – заплатите под пазарните гонят хората. Вдигнете ги.`
+          : `Персоналът е само ${Math.round(avgStaff * 100)}% – в града няма достатъчно свободни работници. Повече жилища в града или по-високи заплати.`,
+    });
+  const by = (k: string) => d.facilities.filter((f) => f.limitedBy === k).length;
+  if (by('power')) out.push({ level: 2, text: `${by('power')} съоръжения нямат достатъчно ток – кметът трябва да построи централа.` });
+  if (by('inputs')) out.push({ level: 2, text: `${by('inputs')} съоръжения чакат суровини – купете ги на борсата или сключете договор за доставка.` });
+  if (by('storage')) out.push({ level: 2, text: 'Складът е пълен и производството спира – продайте стока или постройте склад.' });
+  const worn = d.facilities.filter((f) => f.condition < 0.7).length;
+  if (worn)
+    out.push({
+      level: d.policy.maintenance < 1 ? 2 : 1,
+      text: `${worn} съоръжения са износени (под 70%) и произвеждат по-малко – увеличете бюджета за поддръжка.`,
+    });
+  const selling = new Set(d.orders.filter((o) => o.side === 'SELL').map((o) => o.instrument.slice(5)));
+  const piled = d.inventory.filter((i) => i.quantity > 200 && !selling.has(i.good));
+  if (piled.length && !d.policy.autoSell)
+    out.push({ level: 2, text: `Стоката се трупа в склада (${piled.map((i) => i.good).join(', ')}) – включете автоматичните продажби или продайте на борсата.` });
+  else if (piled.length && d.policy.sellPrice > 1.1)
+    out.push({ level: 1, text: 'Стоката не се продава достатъчно бързо – цената на автоматичните продажби е висока. Свалете я към пазарната.' });
+  if (d.policy.wageLevel > 1.2 && profit < 0) out.push({ level: 1, text: 'Заплатите са високи – по-продуктивни хора, но и по-големи разходи. Ако губите, свалете ги.' });
+  if (!out.length && profit > 0) out.push({ level: 1, text: `Компанията печели ≈ ${(Math.round(profit) / 100).toLocaleString('bg-BG')} € на ден. Помислете за още съоръжения или подобрения.` });
+  return out.sort((a, b) => b.level - a.level);
+}

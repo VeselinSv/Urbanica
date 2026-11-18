@@ -197,6 +197,12 @@ describe('E2E: пълен път на играча', () => {
   it('9–10. произвежда ресурси и търгува с друг играч', async () => {
     const coB = await call<{ id: string }>('POST', '/companies', B.token, { name: 'Bob Foods', hqCityId: B.cityId, capital: 2_000_000 * ECON });
     B.companyId = coB.data.id;
+    // Играчът търгува ръчно: изключва автоматичните продажби (решение на компанията) и отменя пуснатите от тях поръчки.
+    const pol = await call<{ autoSell: boolean; wageLevel: number }>('PATCH', `/companies/${A.companyId}/policy`, A.token, { autoSell: false, wageLevel: 1.1 });
+    expect(pol.status).toBe(200);
+    expect(pol.data).toMatchObject({ autoSell: false, wageLevel: 1.1 });
+    expect((await call('PATCH', `/companies/${A.companyId}/policy`, B.token, { autoSell: true })).status).toBe(403);
+    for (const o of (await call<{ id: string }[]>('GET', '/market/orders', A.token)).data) await call('DELETE', `/market/orders/${o.id}`, A.token);
     // Ако фермата не е намерила място, даваме тестова наличност чрез вътрешния слой.
     const inv = await prisma.inventory.findFirst({ where: { companyId: A.companyId, good: 'grain' } });
     if (!inv || inv.quantity < 20) {

@@ -895,12 +895,34 @@ function treeKind(gen: WorldGenerator, x: number, y: number, s: number): TreeKin
  * подравнен блок 2×2 → една сграда; иначе двойка по X (четно x), иначе двойка по Y (четно y).
  * Връща групата на плочката: кой е „собственикът“ (рисува сградата) и какъв е размерът.
  */
+/** Зоните, чиито съседни парцели (на едно ниво) се застрояват като една обща сграда. */
+const MERGE_ZONES = new Set(['R', 'C', 'O', 'I']);
+
+/** Съседни паркове – един общ, по-голям парк (2 или 2×2 плочки). */
+function parkGroup(lookup: TileLookup, x: number, y: number): { ox: number; oy: number; span: Span } | null {
+  const isPark = (a: number, b: number) => {
+    const o = lookup(a, b);
+    return o?.t === 'service' && o.s === 'park';
+  };
+  if (!isPark(x, y)) return null;
+  const xe = x - (((x % 2) + 2) % 2);
+  const ye = y - (((y % 2) + 2) % 2);
+  if (isPark(xe, ye) && isPark(xe + 1, ye) && isPark(xe, ye + 1) && isPark(xe + 1, ye + 1)) return { ox: xe, oy: ye, span: 'xy' };
+  const xPair = (a: number, b: number) => {
+    const ax = a - (((a % 2) + 2) % 2);
+    return isPark(ax, b) && isPark(ax + 1, b);
+  };
+  if (xPair(x, y)) return { ox: xe, oy: y, span: 'x' };
+  if (isPark(x, ye) && isPark(x, ye + 1) && !xPair(x, ye) && !xPair(x, ye + 1)) return { ox: x, oy: ye, span: 'y' };
+  return null;
+}
+
 function homeGroup(lookup: TileLookup, x: number, y: number): { ox: number; oy: number; span: Span } | null {
   const t = lookup(x, y);
-  if (t?.t !== 'zone' || t.z !== 'R' || t.lvl < 1 || t.ab) return null;
+  if (t?.t !== 'zone' || !MERGE_ZONES.has(t.z) || t.lvl < 1 || t.ab) return null;
   const same = (a: number, b: number) => {
     const o = lookup(a, b);
-    return o?.t === 'zone' && o.z === 'R' && o.lvl === t.lvl && !o.ab;
+    return o?.t === 'zone' && o.z === t.z && o.lvl === t.lvl && !o.ab;
   };
   const xe = x - (((x % 2) + 2) % 2);
   const ye = y - (((y % 2) + 2) % 2);
@@ -937,12 +959,21 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
               const wy = y + (grp.span === 'x' ? 0.5 : 1);
               const gface =
                 lookup(x, y + (grp.span === 'x' ? 1 : 2))?.t === 'road' || !(lookup(x + (grp.span === 'y' ? 1 : 2), y)?.t === 'road') ? 'left' : 'right';
-              sink.push({ d: wx + wy, wx, wy, key: { k: 'zone', z: t.z, lvl: t.lvl, v: v % 13, face: gface, ab: t.ab, span: grp.span } });
+              sink.push({ d: wx + wy, wx, wy, key: { k: 'zone', z: t.z, lvl: t.lvl, v: t.lvl >= 2 || t.z !== 'R' ? v % 100 : v % 13, face: gface, ab: t.ab, span: grp.span } });
             }
-          } else if (t.lvl > 0) sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'zone', z: t.z, lvl: t.lvl, v: v % 13, face, ab: t.ab } });
+          } else if (t.lvl > 0) sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'zone', z: t.z, lvl: t.lvl, v: t.lvl >= 2 ? v % 100 : v % 13, face, ab: t.ab } });
           else if (t.prog > 0) sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'construction', v: v % 9 } });
-        } else if (t.t === 'service') sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'service', s: t.s, v: v % 5, face } });
-        else if (t.t === 'facility') sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'facility', f: t.f, v: v % 5, face } });
+        } else if (t.t === 'service') {
+          const pg = t.s === 'park' ? parkGroup(lookup, x, y) : null;
+          if (pg) {
+            // съседните паркове – един общ парк, рисуван от „собственика“ на групата
+            if (pg.ox === x && pg.oy === y) {
+              const wx = x + (pg.span === 'y' ? 0.5 : 1);
+              const wy = y + (pg.span === 'x' ? 0.5 : 1);
+              sink.push({ d: wx + wy, wx, wy, key: { k: 'service', s: 'park', v: v % 12, face, span: pg.span } });
+            }
+          } else sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'service', s: t.s, v: t.s === 'parking' ? v % 12 : v % 5, face } });
+        } else if (t.t === 'facility') sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'facility', f: t.f, v: v % 5, face } });
         else if (t.t === 'path') {
           // пейки и лампи покрай алеите
           if (!mid) {

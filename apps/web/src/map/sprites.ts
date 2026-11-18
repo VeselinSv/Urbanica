@@ -6,6 +6,7 @@
  */
 
 import { newCanvas } from './canvas';
+import { bigPark, parkedCar, parkingLot, variedBuilding, type Kit } from './variety';
 
 export const TW = 64;
 export const TH = 32;
@@ -633,9 +634,8 @@ function parking(g: Ctx, P: P3, r: number, u0: number, v0: number, u1: number, v
   for (let i = 0; i <= n; i++)
     line(g, P(u0 + ((u1 - u0) * i) / n, v0, 0), P(u0 + ((u1 - u0) * i) / n, v0 + (v1 - v0) * 0.45, 0), 'rgba(255,255,255,0.7)', 0.5 * r);
   const cols = [0xc0392b, 0xecf0f1, 0x2c3e50, 0x2471a3, 0x7f8c8d, 0xf1c40f, 0x1e8449, 0xd5d8dc];
-  for (let i = 0; i < n; i++)
-    if (h01(seed, i, 51) < fill)
-      carSprite(g, P, r, u0 + ((u1 - u0) * (i + 0.5)) / n, v0 + (v1 - v0) * 0.22, false, cols[Math.floor(h01(seed, i, 52) * cols.length)]);
+  void cols;
+  for (let i = 0; i < n; i++) if (h01(seed, i, 51) < fill) parkedCar(g, P, r, u0 + ((u1 - u0) * (i + 0.5)) / n, v0 + (v1 - v0) * 0.22, Math.PI / 2, seed * 13 + i);
 }
 
 /** Малка изометрична кола (каросерия, покрив, стъкла, сянка). */
@@ -1108,7 +1108,7 @@ let SEASON: Season = 'summer';
 
 export type BuildingKey = (
   | { k: 'zone'; z: string; lvl: number; v: number; face: Face; ab?: boolean; occ?: number; span?: Span }
-  | { k: 'service'; s: string; v: number; face: Face }
+  | { k: 'service'; s: string; v: number; face: Face; span?: Span }
   | { k: 'facility'; f: string; v: number; face: Face }
   | { k: 'construction'; v: number }
   | { k: 'tree'; t: TreeKind; v: number; size: number }
@@ -1267,8 +1267,10 @@ function drawSprite(key: BuildingKey, r: number): Sprite {
         }
       });
     case 'zone':
-      return key.span && key.z === 'R' && key.lvl > 0 ? mergedHome(key, r) : zoneBuilding(key, r);
+      if (key.span && key.lvl > 0) return key.z === 'R' ? mergedHome(key, r) : mergedBlock(key, r);
+      return zoneBuilding(key, r);
     case 'service':
+      if (key.s === 'park' && key.span) return mergedPark(key, r);
       return serviceBuilding(key, r);
     case 'facility':
       return facilityBuilding(key, r);
@@ -1541,27 +1543,8 @@ function zoneBuilding(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Spri
         else roof(g, P, b, hh, 'hip', dim(pick(ROOF_TILES, t(5))), wall, 12, v);
         return;
       }
-      // висока жилищна сграда / луксозна кула / комплекс
-      const luxury = t(2) < 0.3;
-      const hh = Math.round(H / FLOOR) * FLOOR;
-      const b: [number, number, number, number] = luxury ? [-0.3, -0.3, 0.3, 0.3] : t(3) < 0.5 ? [-0.38, -0.26, 0.38, 0.28] : [-0.26, -0.38, 0.28, 0.38];
-      const wall = dim(luxury ? pick(MODERN, t(4)) : pick(WALLS, t(4)));
-      shadow(g, P, b[0], b[1], b[2], b[3], hh);
-      // подиум
-      box(g, P, b[0] - 0.04, b[1] - 0.04, b[2] + 0.04, b[3] + 0.04, 0, FLOOR, { wall: dim(0xbdb6aa) });
-      faceQuad(g, P, face, [b[0] - 0.04, b[1] - 0.04, b[2] + 0.04, b[3] + 0.04], 0.1, 0.9, 1, FLOOR - 2, rgb(0x5d7484, face === 'left' ? 0.95 : 0.75));
-      box(g, P, b[0], b[1], b[2], b[3], FLOOR, hh, { wall });
-      windows(
-        g,
-        P,
-        r,
-        b,
-        FLOOR,
-        hh,
-        luxury ? { glass: pick(GLASS, t(5)), band: true, seed: v } : { glass: 0x6c8597, density: 6, w: 0.5, seed: v, lit: 0.14, balcony: 0.7 },
-      );
-      roof(g, P, b, hh, 'flat', dim(0x9a9792), wall, 0, v);
-      if (luxury) box(g, P, b[0] + 0.1, b[1] + 0.1, b[2] - 0.1, b[3] - 0.1, hh, hh + 6, { wall: 0xdfe3e6 });
+      // висока жилищна сграда: една от 10-те форми × 10-те материала
+      variedBuilding(KIT, g, P, r, { b: [-0.36, -0.36, 0.36, 0.36], H, seed: v * 13 + 1, face, dim });
       void other;
       return;
     }
@@ -1609,15 +1592,8 @@ function zoneBuilding(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Spri
           roof(g, P, b, 16, 'flat', dim(0x9d9a95), wall, 0, v);
           return;
         }
-        // търговска сграда (магазини на партера, офиси отгоре)
-        const b: [number, number, number, number] = [-0.38, -0.34, 0.38, 0.36];
-        const wall = dim(pick([...WALLS, ...MODERN], t(4)));
-        const hh = FLOOR * 4;
-        shadow(g, P, b[0], b[1], b[2], b[3], hh);
-        box(g, P, b[0], b[1], b[2], b[3], 0, hh, { wall });
-        for (const f of ['left', 'right'] as Face[]) faceQuad(g, P, f, b, 0.04, 0.96, 1, 9, rgb(0x56778c, f === 'left' ? 1 : 0.75));
-        windows(g, P, r, b, FLOOR, hh, { glass: 0x6f8aa0, density: 6, seed: v, lit: 0.15 });
-        roof(g, P, b, hh, 'flat', dim(0x8d8a86), wall, 0, v);
+        // търговска сграда (магазини на партера, офиси отгоре) – разнообразни форми и материали
+        variedBuilding(KIT, g, P, r, { b: [-0.38, -0.36, 0.38, 0.36], H: FLOOR * (3 + Math.floor(t(3) * 2)), seed: v * 17 + 2, face, dim });
         return;
       }
       // търговски център / хотел
@@ -1656,15 +1632,7 @@ function zoneBuilding(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Spri
         }
         return;
       }
-      const hh = Math.round(H / FLOOR) * FLOOR;
-      const b: [number, number, number, number] = [-0.3, -0.32, 0.3, 0.32];
-      const wall = dim(pick([0xe8e2d6, 0xd9cfc0, 0xc7bba8], t(4)));
-      shadow(g, P, b[0], b[1], b[2], b[3], hh);
-      box(g, P, b[0] - 0.08, b[1] - 0.08, b[2] + 0.08, b[3] + 0.08, 0, FLOOR, { wall: dim(0xcfc6b6) });
-      box(g, P, b[0], b[1], b[2], b[3], FLOOR, hh, { wall });
-      windows(g, P, r, b, FLOOR, hh, { glass: 0x6a8aa4, density: 7, w: 0.55, seed: v, lit: 0.25 });
-      roof(g, P, b, hh, 'flat', dim(0x8e8a84), wall, 0, v);
-      faceQuad(g, P, face, b, 0.2, 0.8, hh - 5, hh - 1, rgb(0xc9a84a));
+      variedBuilding(KIT, g, P, r, { b: [-0.36, -0.36, 0.36, 0.36], H, seed: v * 19 + 4, face, dim });
       return;
     }
     if (z === 'O' || z === 'H') {
@@ -1682,37 +1650,8 @@ function zoneBuilding(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Spri
         }
         return;
       }
-      const hh = Math.round(H / FLOOR) * FLOOR;
-      const b: [number, number, number, number] = lvl === 3 ? [-0.3, -0.3, 0.3, 0.3] : [-0.36, -0.34, 0.36, 0.34];
-      const glass = dim(pick(GLASS, t(5)));
-      const frame = dim(pick(MODERN, t(4)));
-      shadow(g, P, b[0], b[1], b[2], b[3], hh);
-      if (lvl === 3 && t(6) < 0.5) {
-        // кула със стъпаловиден силует
-        box(g, P, b[0], b[1], b[2], b[3], 0, hh * 0.7, { wall: frame });
-        windows(g, P, r, b, 0, hh * 0.7, { glass, band: true, seed: v });
-        const b2: [number, number, number, number] = [b[0] + 0.07, b[1] + 0.07, b[2] - 0.07, b[3] - 0.07];
-        roof(g, P, b, hh * 0.7, 'flat', 0x9ea3a8, frame, 0, v + 1);
-        box(g, P, b2[0], b2[1], b2[2], b2[3], hh * 0.7, hh, { wall: frame });
-        windows(g, P, r, b2, hh * 0.7, hh, { glass, band: true, seed: v });
-        roof(g, P, b2, hh, 'flat', 0x9ea3a8, frame, 0, v);
-        const top = P(0, 0, hh + 18);
-        const bot = P(0, 0, hh);
-        g.strokeStyle = '#9aa0a6';
-        g.lineWidth = 1.2 * r;
-        g.beginPath();
-        g.moveTo(bot[0], bot[1]);
-        g.lineTo(top[0], top[1]);
-        g.stroke();
-        return;
-      }
-      box(g, P, b[0], b[1], b[2], b[3], 0, hh, { wall: frame });
-      windows(g, P, r, b, 0, hh, { glass, band: true, seed: v });
-      // вертикални ребра
-      for (const f of ['left', 'right'] as Face[])
-        for (let i = 1; i < 4; i++) faceQuad(g, P, f, b, i / 4 - 0.01, i / 4 + 0.01, 0, hh, rgb(frame, f === 'left' ? 0.95 : 0.75));
-      door(g, P, b, face, 0.5, 0.2, 10, 0x34495e);
-      roof(g, P, b, hh, 'flat', 0x9ea3a8, frame, 0, v);
+      // офис сграда: една от 10-те форми × 10-те материала (стъкло, камък, бетон, дърво, тухли…)
+      variedBuilding(KIT, g, P, r, { b: lvl === 1 ? [-0.32, -0.3, 0.32, 0.3] : [-0.37, -0.37, 0.37, 0.37], H, seed: v * 23 + 6, face, dim, shape: lvl === 1 ? [0, 2, 8, 9][Math.floor(t(9) * 4)] : undefined });
       return;
     }
     if (z === 'I') {
@@ -1854,6 +1793,168 @@ function farmTile(g: Ctx, P: P3, r: number, v: number, lvl: number, dim: (c: num
   }
 }
 
+/** Помощните функции за variety.ts (материали, форми, паркинги, паркове). */
+const KIT: Kit = {
+  box,
+  faceQuad: (g, P, face, b, s0, s1, z0, z1, fill) => faceQuad(g, P, face, b, s0, s1, z0, z1, fill),
+  windows: (g, P, r, b, z0, z1, ws) => windows(g, P, r, b, z0, z1, ws as unknown as WindowStyle),
+  shadow: (g, P, u0, v0, u1, v1, h) => shadow(g, P, u0, v0, u1, v1, h),
+  poly: (g, pts, fill) => poly(g, pts, fill),
+  line,
+  cylinder: (g, P, r, u, v, rad, z0, z1, color) => cylinder(g, P, r, u, v, rad, z0, z1, color),
+  tree: (g, P, r, u, v, seed, size) => {
+    const kinds: TreeKind[] = ['oak', 'oak', 'birch', 'poplar', 'willow', 'conifer'];
+    const sp = getSprite({ k: 'tree', t: kinds[Math.floor(h01(seed, 86) * kinds.length)], v: seed % 40, size, sn: SEASON }, r);
+    const [px, py] = P(u, v, 0);
+    g.drawImage(sp.canvas, px - sp.ax, py - sp.ay);
+  },
+};
+
+/** Отпечатък на група плочки (2 по X, 2 по Y или 2×2) – центърът е в 0,0. */
+function spanBox(span: Span, pad = 0.1): [number, number, number, number] {
+  const su = span === 'y' ? 0.5 : 1;
+  const sv = span === 'x' ? 0.5 : 1;
+  return [-su + pad, -sv + pad, su - pad, sv - pad];
+}
+
+/**
+ * Обединени търговски, офисни и индустриални парцели: една по-голяма сграда върху 2 или 4 парцела.
+ *  - офиси: висока сграда от 10-те форми и 10-те материала (на 4 парцела – по-висока);
+ *  - търговия: ниво 1 – редица магазини с тенти; 2 – голям супермаркет с паркинг; 3 – мол или кула;
+ *  - индустрия: голямо производствено хале с шедов покрив, силози, комини и паркинг за камиони.
+ */
+function mergedBlock(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Sprite {
+  const { z, lvl, v, face } = key;
+  const span = key.span!;
+  const t = (n: number) => h01(v, n, 91);
+  const ab = !!key.ab;
+  const dim = (c: number) => (ab ? mixc(c, 0x6b6660, 0.55) : c);
+  const xy = span === 'xy';
+  const H =
+    z === 'O'
+      ? [34, 80, 150 + t(1) * 140][lvl - 1] * (xy ? 1.25 : 1.05)
+      : z === 'C'
+        ? [16, 22, 40 + t(1) * 90][lvl - 1]
+        : z === 'R'
+          ? 60
+          : 34;
+  return makeSprite(
+    r,
+    H + 70,
+    (g, P) => {
+      const [u0, v0, u1, v1] = spanBox(span, 0.02);
+      const ground = (c: number) => poly(g, [P(u0, v0, 0), P(u1, v0, 0), P(u1, v1, 0), P(u0, v1, 0)], rgb(dim(c)));
+      if (z === 'O' || (z === 'C' && lvl === 3 && t(2) < 0.5)) {
+        // офис/кула от 10-те форми × 10-те материала; около нея – площад с дървета
+        ground(0xcfc9bd);
+        const b = spanBox(span, xy ? 0.22 : 0.16);
+        const trees: [number, number][] = [
+          [u0 + 0.08, v1 - 0.08],
+          [u1 - 0.08, v0 + 0.08],
+        ];
+        for (const [i, [tu, tv]] of trees.entries()) KIT.tree(g, P, r, tu, tv, v + i, 1.1);
+        variedBuilding(KIT, g, P, r, { b, H, seed: v * 7 + 3, face, dim, plaza: false });
+        return;
+      }
+      if (z === 'C') {
+        if (lvl === 1) {
+          // редица магазини: всеки със своя цвят, витрина и тента
+          ground(0xd3ccbe);
+          const along = span !== 'y';
+          const n = xy ? 4 : 3;
+          const hh = FLOOR + 4;
+          const awn = [0xc0392b, 0x2e7d32, 0x1f5f8b, 0xd68910, 0x7d3c98, 0x16a085];
+          for (let i = 0; i < n; i++) {
+            const a0 = (along ? u0 : v0) + 0.06 + (((along ? u1 - u0 : v1 - v0) - 0.12) * i) / n;
+            const a1 = a0 + ((along ? u1 - u0 : v1 - v0) - 0.12) / n - 0.01;
+            const b: [number, number, number, number] = along ? [a0, v0 + 0.12, a1, v1 - 0.25] : [u0 + 0.12, a0, u1 - 0.25, a1];
+            const wall = dim(pick(WALLS, h01(v, i, 92)));
+            if (i === 0) shadow(g, P, u0 + 0.06, v0 + 0.12, u1 - 0.06, v1 - 0.25, hh);
+            box(g, P, b[0], b[1], b[2], b[3], 0, hh, { wall });
+            const f: Face = along ? 'left' : 'right';
+            faceQuad(g, P, f, b, 0.1, 0.9, 1, 8, rgb(0x5f7d90, f === 'left' ? 1 : 0.75));
+            faceQuad(g, P, f, b, 0.12, 0.88, hh - 4, hh - 1, rgb(0xf4f1e8, f === 'left' ? 1 : 0.8));
+            const c = dim(awn[Math.floor(h01(v, i, 93) * awn.length)]);
+            const o = 0.08;
+            const pts =
+              f === 'left'
+                ? [P(b[0], b[3], 10), P(b[2], b[3], 10), P(b[2], b[3] + o, 7), P(b[0], b[3] + o, 7)]
+                : [P(b[2], b[1], 10), P(b[2], b[3], 10), P(b[2] + o, b[3], 7), P(b[2] + o, b[1], 7)];
+            poly(g, pts as [number, number][], rgb(c, f === 'left' ? 1 : 0.8));
+            roof(g, P, b, hh, 'flat', dim(0x8f8b85), wall, 0, v + i);
+          }
+          return;
+        }
+        if (lvl === 2 || xy) {
+          // голям супермаркет/мол с паркинг отпред
+          ground(0x6e6f71);
+          const along = span !== 'y';
+          const b: [number, number, number, number] = along ? [u0 + 0.08, v0 + 0.08, u1 - 0.08, v0 + (v1 - v0) * 0.55] : [u0 + 0.08, v0 + 0.08, u0 + (u1 - u0) * 0.55, v1 - 0.08];
+          const lotB: [number, number, number, number] = along ? [u0 + 0.04, b[3] + 0.06, u1 - 0.04, v1 - 0.02] : [b[2] + 0.06, v0 + 0.04, u1 - 0.02, v1 - 0.04];
+          parkingLot(KIT, g, P, r, lotB, v, 0.7, along);
+          const hh = lvl === 3 ? 30 : 18;
+          const wall = dim(pick(MODERN, t(4)));
+          const brand = pick([0xd35400, 0x1f6fb2, 0x27ae60, 0xc0392b, 0x8e44ad], t(5));
+          shadow(g, P, b[0], b[1], b[2], b[3], hh);
+          box(g, P, b[0], b[1], b[2], b[3], 0, hh, { wall });
+          const f: Face = along ? 'left' : 'right';
+          faceQuad(g, P, f, b, 0.06, 0.94, 1, 10, faceGrad(g, P, f, b, 0.5, 1, 10, rgb(0x2f4a5c), rgb(0xa9cde0)));
+          for (let i = 1; i < 12; i++) faceQuad(g, P, f, b, 0.06 + i * 0.073 - 0.003, 0.06 + i * 0.073 + 0.003, 1, 10, 'rgba(230,235,240,0.8)');
+          faceQuad(g, P, f, b, 0.04, 0.96, hh - 6, hh - 1.5, rgb(brand));
+          faceQuad(g, P, f, b, 0.35, 0.65, hh - 5, hh - 2.5, 'rgba(255,255,255,0.88)');
+          roof(g, P, b, hh, 'flat', dim(0x9d9a95), wall, 0, v);
+          for (let i = 0; i < 5; i++) roofPlaneSky(g, P, b[0] + 0.1 + i * ((b[2] - b[0] - 0.2) / 5), b[1] + 0.1, b[0] + 0.1 + i * ((b[2] - b[0] - 0.2) / 5) + 0.08, b[3] - 0.1, hh);
+          return;
+        }
+        // ниво 3, две плочки – търговска кула от 10-те форми
+        ground(0xcfc9bd);
+        variedBuilding(KIT, g, P, r, { b: spanBox(span, 0.16), H, seed: v * 11 + 5, face, dim, plaza: false });
+        return;
+      }
+      // индустрия: голямо хале с шедов покрив, силози, комини, камиони на рампите
+      ground(0x9a968e);
+      const along = span !== 'y';
+      const b: [number, number, number, number] = along ? [u0 + 0.06, v0 + 0.06, u1 - 0.3, v1 - 0.22] : [u0 + 0.06, v0 + 0.06, u1 - 0.22, v1 - 0.3];
+      const hh = lvl === 1 ? 16 : lvl === 2 ? 22 : 28;
+      const wall = dim(pick([0xb7b1a6, 0xa59f95, 0x9fa6ab, 0xc4b59d], t(4)));
+      shadow(g, P, b[0], b[1], b[2], b[3], hh + 10);
+      if (lvl >= 2) {
+        cylinder(g, P, r, b[2] + 0.13, b[1] + 0.12, 0.09, 0, 30, dim(0xd8d6d0));
+        cylinder(g, P, r, b[2] + 0.13, b[1] + 0.34, 0.09, 0, 30, dim(0xd8d6d0));
+      }
+      box(g, P, b[0], b[1], b[2], b[3], 0, hh, { wall });
+      corrugate(g, P, b, 0, hh - 5, r);
+      for (const f of ['left', 'right'] as Face[]) faceQuad(g, P, f, b, 0.04, 0.96, hh - 6, hh - 2, rgb(0x7f97a8, f === 'left' ? 0.95 : 0.72));
+      const docks = xy ? 6 : 4;
+      const df: Face = along ? 'left' : 'right';
+      for (let i = 0; i < docks; i++) faceQuad(g, P, df, b, (i + 0.2) / docks, (i + 0.75) / docks, 0, 8, rgb(0x5d6166, df === 'left' ? 0.95 : 0.75));
+      roof(g, P, b, hh, 'sawtooth', dim(0x8a8f94), wall, 7, v);
+      if (lvl >= 2 && t(3) < 0.7) cylinder(g, P, r, b[0] + 0.12, b[1] + 0.1, 0.045, 0, hh + 34 + t(6) * 20, dim(t(7) < 0.5 ? 0xc9c5bd : 0xb84d33));
+      // камиони пред рампите
+      for (let i = 0; i < (xy ? 3 : 2); i++) {
+        const s = b[0] + 0.2 + i * 0.35;
+        if (along) {
+          box(g, P, s, b[3] + 0.04, s + 0.09, b[3] + 0.2, 0, 6, { wall: 0xe9e9e9, edge: false });
+          box(g, P, s, b[3] + 0.2, s + 0.09, b[3] + 0.27, 0, 5, { wall: pick([0xc0392b, 0x2471a3, 0x2e4053], h01(v, i)), edge: false });
+        } else {
+          const vv = b[1] + 0.2 + i * 0.35;
+          box(g, P, b[2] + 0.04, vv, b[2] + 0.2, vv + 0.09, 0, 6, { wall: 0xe9e9e9, edge: false });
+          box(g, P, b[2] + 0.2, vv, b[2] + 0.27, vv + 0.09, 0, 5, { wall: pick([0xc0392b, 0x2471a3, 0x2e4053], h01(v, i)), edge: false });
+        }
+      }
+    },
+    true,
+  );
+}
+
+/** Обединен парк върху 2 или 4 плочки: езерце, алеи, детска площадка, много дървета – моравата стига до ръба. */
+function mergedPark(key: Extract<BuildingKey, { k: 'service' }>, r: number): Sprite {
+  const span = key.span!;
+  const su = span === 'y' ? 0.5 : 1;
+  const sv = span === 'x' ? 0.5 : 1;
+  return makeSprite(r, 60, (g, P) => bigPark(KIT, g, P, r, su, sv, key.v, SEASON === 'winter'), true);
+}
+
 function serviceBuilding(key: Extract<BuildingKey, { k: 'service' }>, r: number): Sprite {
   const { s, v, face } = key;
   const t = (n: number) => h01(v, n);
@@ -1861,11 +1962,10 @@ function serviceBuilding(key: Extract<BuildingKey, { k: 'service' }>, r: number)
     const lot = (c: number) => poly(g, [P(-0.48, -0.48, 0), P(0.48, -0.48, 0), P(0.48, 0.48, 0), P(-0.48, 0.48, 0)], rgb(c));
     switch (s) {
       case 'parking': {
-        // открит паркинг: асфалт, бели линии, паркирани коли, бариера и табела „P“
-        lot(0x6a6d72);
-        parking(g, P, r, -0.46, -0.42, 0.46, 0.04, v, 0.75);
-        parking(g, P, r, -0.46, 0.06, 0.46, 0.46, v + 7, 0.7);
-        const [px, py] = P(0.4, 0.42, 0);
+        // открит паркинг: асфалт до ръба (съседните паркинги се сливат), два реда места с паркирани коли, табела „P“
+        void lot;
+        parkingLot(KIT, g, P, r, [-0.5, -0.5, 0.5, 0.5], v, 0.55 + h01(v, 9) * 0.35, face === 'left');
+        const [px, py] = P(0.42, 0.44, 0);
         g.strokeStyle = '#3b4046';
         g.lineWidth = 1 * r;
         g.beginPath();
@@ -1881,41 +1981,8 @@ function serviceBuilding(key: Extract<BuildingKey, { k: 'service' }>, r: number)
         return;
       }
       case 'park': {
-        lot(grass(0x7fae55));
-        g.strokeStyle = rgb(0xd9ccaa);
-        g.lineWidth = 2.4 * r;
-        const a = P(-0.48, 0, 0);
-        const b = P(0.48, 0, 0);
-        const c = P(0, -0.48, 0);
-        const d = P(0, 0.48, 0);
-        g.beginPath();
-        g.moveTo(a[0], a[1]);
-        g.lineTo(b[0], b[1]);
-        g.moveTo(c[0], c[1]);
-        g.lineTo(d[0], d[1]);
-        g.stroke();
-        const [fx, fy] = P(0, 0, 0);
-        g.beginPath();
-        g.ellipse(fx, fy, 8 * r, 4 * r, 0, 0, Math.PI * 2);
-        g.fillStyle = rgb(0xd9ccaa);
-        g.fill();
-        g.beginPath();
-        g.ellipse(fx, fy, 5 * r, 2.5 * r, 0, 0, Math.PI * 2);
-        g.fillStyle = rgb(0x5aa0c8);
-        g.fill();
-        const spots: [number, number][] = [
-          [-0.3, -0.3],
-          [0.28, -0.25],
-          [-0.25, 0.3],
-          [0.3, 0.3],
-          [-0.35, 0.05],
-          [0.05, -0.35],
-        ];
-        for (const [i, [u, w]] of spots.entries()) {
-          const sp = getSprite({ k: 'tree', t: i % 3 === 0 ? 'birch' : 'oak', v: v + i, size: 1.4 + h01(v, i) * 0.5 }, r);
-          const [px, py] = P(u, w, 0);
-          g.drawImage(sp.canvas, px - sp.ax, py - sp.ay);
-        }
+        // моравата стига до ръба на плочката – съседните паркове изглеждат като един
+        bigPark(KIT, g, P, r, 0.5, 0.5, v, SEASON === 'winter');
         return;
       }
       case 'school':

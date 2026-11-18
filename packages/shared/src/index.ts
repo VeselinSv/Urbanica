@@ -5,3 +5,4 @@ export * from './validation';
 export * from './misc';
 export * from './permissions';
 export * from './scale';
+export * from './companyPolicy';

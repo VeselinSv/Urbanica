@@ -1,8 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Bar, BarChart } from 'recharts';
-import { BALANCE, FACILITIES, FACILITY_TYPES, GOODS, GOOD_IDS, TECHS, type FacilityType, type GoodId } from '@gce/shared';
-import { del, post } from '../../api';
-import { bumpData, refreshAll, refreshCompanies, setState, toast, useStore } from '../../store';
+import {
+  BALANCE,
+  COMPANY_POLICY_LIMITS,
+  FACILITIES,
+  FACILITY_TYPES,
+  GOODS,
+  GOOD_IDS,
+  TECHS,
+  companyPolicyEffects,
+  type CompanyPolicy,
+  type FacilityType,
+  type GoodId,
+} from '@gce/shared';
+import { del, patch, post } from '../../api';
+import { bumpData, errorToast, refreshAll, refreshCompanies, setState, toast, useStore } from '../../store';
 import { KIND_LABELS, RATING_COLOR, money, num, pct, toCents } from '../../format';
 import { AsyncButton, Field, Meter, Section, Stat, Table, useApi } from '../common';
 
@@ -36,6 +48,112 @@ interface CompanyFull {
   shipments?: { id: string; good: string; quantity: number; toCityId: string; arriveTick: number }[];
   stats?: { tick: number; revenue: number; costs: number; profit: number; cash: number }[];
   publicReport: { revenue: number; costs: number; profit: number; days: number };
+  policy?: CompanyPolicy;
+  advice?: { level: 1 | 2 | 3; text: string }[];
+}
+
+/** Средни заплати на ден за последните дни (за прогнозата на решенията). */
+function wagesPerDay(d: CompanyFull): number {
+  const s = (d.stats ?? []).slice(-7) as unknown as { costs: number }[];
+  return s.length ? s.reduce((a, x) => a + (x.costs ?? 0), 0) / s.length : 0;
+}
+
+/**
+ * Решенията на ръководството – заплати, поддръжка, автоматични продажби. Записват се автоматично;
+ * до всеки плъзгач е обяснено какво ще стане (по същите формули като в симулацията).
+ */
+function CompanyDecisions({ companyId, policy, wagesPerDay: costs, onSaved }: { companyId: string; policy: CompanyPolicy; wagesPerDay: number; onSaved: () => void }) {
+  const [p, setP] = useState<CompanyPolicy>(policy);
+  const dirty = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [state, setStateS] = useState<'idle' | 'pending' | 'saving'>('idle');
+  useEffect(() => {
+    if (!dirty.current) setP(policy);
+  }, [policy]);
+  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+  const edit = (next: CompanyPolicy) => {
+    dirty.current = true;
+    setP(next);
+    setStateS('pending');
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      setStateS('saving');
+      try {
+        await patch(`/companies/${companyId}/policy`, next);
+        onSaved();
+      } catch (e) {
+        errorToast(e);
+        setP(policy);
+      }
+      dirty.current = false;
+      setStateS('idle');
+    }, 700);
+  };
+  const fx = companyPolicyEffects(p);
+  const L = COMPANY_POLICY_LIMITS;
+  return (
+    <Section title="Решения на ръководството">
+      <p className="small muted">От тях зависи дали компанията ще потръгне. Промените важат от следващия игрови ден.</p>
+      <Field label={`Заплати: ${pct(p.wageLevel, 0)} от пазарните`}>
+        <input type="range" min={L.wageLevel[0]} max={L.wageLevel[1]} step={0.05} value={p.wageLevel} onChange={(e) => edit({ ...p, wageLevel: Number(e.target.value) })} />
+      </Field>
+      <p className="small decision-fx">
+        {p.wageLevel < 1 ? (
+          <span className="bad">
+            Хората напускат: персонал до {pct(fx.staffMult, 0)} → по-малко продукция, но по-евтини заплати.
+          </span>
+        ) : p.wageLevel > 1 ? (
+          <span className="good">
+            Мотивирани служители: +{pct(fx.productivity - 1, 0)} продукция; заплатите струват {pct(p.wageLevel - 1, 0)} повече.
+          </span>
+        ) : (
+          <span className="muted">Пазарни заплати – нормален персонал и продуктивност.</span>
+        )}
+      </p>
+      <Field label={`Поддръжка: ${pct(p.maintenance, 0)} от нормалния бюджет`}>
+        <input type="range" min={L.maintenance[0]} max={L.maintenance[1]} step={0.1} value={p.maintenance} onChange={(e) => edit({ ...p, maintenance: Number(e.target.value) })} />
+      </Field>
+      <p className="small decision-fx">
+        {fx.wear > 0 ? (
+          <span className={p.maintenance < 1 ? 'bad' : 'muted'}>
+            Съоръженията се износват с {(fx.wear * 100).toFixed(2)}% на ден ({Math.round(0.3 / fx.wear)} дни до 70%) – износените произвеждат по-малко.
+          </span>
+        ) : (
+          <span className="good">Съоръженията се ремонтират с {(-fx.wear * 100).toFixed(2)}% на ден; поддръжката струва {pct(p.maintenance - 1, 0)} повече.</span>
+        )}
+      </p>
+      <label className="row small" style={{ gap: 6, alignItems: 'center' }}>
+        <input type="checkbox" checked={p.autoSell} onChange={(e) => edit({ ...p, autoSell: e.target.checked })} />
+        <b>Автоматично продавай продукцията</b>
+      </label>
+      {p.autoSell ? (
+        <>
+          <Field label={`Цена: ${pct(p.sellPrice, 0)} от пазарната`}>
+            <input type="range" min={L.sellPrice[0]} max={L.sellPrice[1]} step={0.05} value={p.sellPrice} onChange={(e) => edit({ ...p, sellPrice: Number(e.target.value) })} />
+          </Field>
+          <p className="small decision-fx">
+            {p.sellPrice < 0.95 ? (
+              <span>Евтино – продава се бързо (и на износ), но с по-малка печалба.</span>
+            ) : p.sellPrice > 1.1 ? (
+              <span className="bad">Скъпо – повече пари на брой, но стоката може да остане в склада (жителите купуват до {pct(BALANCE.market.retailMaxPremium, 0)}).</span>
+            ) : (
+              <span className="muted">Около пазарната цена – добър баланс между бързина и печалба.</span>
+            )}{' '}
+            Суровините за собствените ви съоръжения не се продават.
+          </p>
+          <Field label="Пази в склада (бр. от всяка стока)">
+            <input type="number" min={0} step={10} value={p.keepStock} onChange={(e) => edit({ ...p, keepStock: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} style={{ width: 100 }} />
+          </Field>
+        </>
+      ) : (
+        <p className="small muted decision-fx">Продукцията остава в склада – продавате ръчно в „Пазар“ или чрез договори.</p>
+      )}
+      {costs > 0 && <p className="small muted">Разходи за последните дни: ≈ {money(costs)} на ден.</p>}
+      <p className="small muted" aria-live="polite">
+        {state === 'pending' ? '● промени – записват се…' : state === 'saving' ? 'записване…' : '✓ записано'}
+      </p>
+    </Section>
+  );
 }
 
 const LIMITED: Record<string, string> = { none: 'пълен капацитет', staff: 'персонал', power: 'ток', inputs: 'суровини', storage: 'склад', idle: 'престой' };
@@ -111,6 +229,23 @@ export function CompanyPanel() {
             <Stat label="Печалба (30 дни, паричен поток)" value={money(d.publicReport.profit)} tone={d.publicReport.profit < 0 ? 'bad' : 'good'} />
             <Stat label="Статус" value={d.status} />
           </div>
+          {d.advice && d.advice.length > 0 && (
+            <Section title="Как върви компанията">
+              <ul className="needs-list">
+                {d.advice.map((a, i) => (
+                  <li key={i} className={`need-${a.level}`}>
+                    <span className="need-icon">{a.level === 3 ? '⚠' : a.level === 2 ? '●' : '💡'}</span>
+                    <span className="need-text">
+                      <small style={{ color: 'var(--text)', fontSize: 12 }}>{a.text}</small>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+          {d.policy && d.myRoles.some((r) => r === 'CEO' || r === 'MANAGER') && (
+            <CompanyDecisions companyId={d.id} policy={d.policy} wagesPerDay={wagesPerDay(d)} onSaved={() => c.reload()} />
+          )}
           <Section title="Съоръжения">
             <Table
               head={['Тип', 'Персонал', 'Ток', 'Произв.', 'Ограничение', 'Състояние']}
@@ -218,9 +353,64 @@ export function MarketPanel() {
   const [cityId, setCityId] = useState<string>('');
   const isGood = inst.startsWith('GOOD:');
   const ref = book.data?.refPrice ?? 0;
+  const good = isGood ? (inst.slice(5) as GoodId) : null;
+  const myCo = useApi<CompanyFull>(activeCompanyId ? `/companies/${activeCompanyId}` : null);
+  const tradeCity = cityId || activeCityId || '';
+  const stock = good ? (myCo.data?.inventory ?? []).find((i) => i.good === good && i.cityId === tradeCity)?.quantity ?? 0 : 0;
+  const q = Math.max(0, Math.floor(Number(qty) || 0));
+  const unit = price ? toCents(Number(price)) : ref;
+  const total = q * unit;
+  const coName = companies.find((c) => c.id === activeCompanyId)?.name;
+  const cityName = cities.find((c) => c.id === tradeCity)?.name ?? '—';
+  const bestBid = book.data?.bids[0]?.price;
+  const bestAsk = book.data?.asks[0]?.price;
+  const myGoods = (myCo.data?.inventory ?? []).filter((i) => i.quantity > 0);
   return (
     <div>
       <h2>Пазар и търговия</h2>
+      <details className="callout help">
+        <summary>
+          <b>Как се търгува?</b> (кликнете)
+        </summary>
+        <ol className="small">
+          <li>
+            <b>Произвеждате</b> стока със съоръжение на компанията (ферма → зърно, мелница → храна…). Тя влиза в склада на компанията в града, където е
+            съоръжението.
+          </li>
+          <li>
+            <b>Продавате</b>: изберете стоката, „Продавам“, количество и цена. Ако някой вече купува на тази или по-висока цена – сделката е веднага. Иначе
+            поръчката чака в книгата; всеки ден жителите и световният пазар купуват от най-евтините.
+          </li>
+          <li>
+            <b>Купувате</b> суровини за преработка: „Купувам“ – парите се заделят, докато някой продаде. Стоката от друг град пристига след няколко дни.
+          </li>
+          <li>
+            <b>Договор</b> („Договори“) – редовни доставки с друга компания на фиксирана цена; изгодно, когато имате постоянен купувач или доставчик.
+          </li>
+        </ol>
+      </details>
+      {myGoods.length > 0 && (
+        <Section title={`Стоки на ${coName ?? 'компанията'} за продажба`}>
+          <div className="row wrap">
+            {myGoods.map((i) => (
+              <button
+                key={`${i.good}:${i.cityId}`}
+                className="btn small"
+                title="Попълва поръчка за продажба на цялото количество малко под референтната цена"
+                onClick={() => {
+                  setInst(`GOOD:${i.good}`);
+                  setSide('SELL');
+                  setQty(String(i.quantity));
+                  setPrice('');
+                  setCityId(i.cityId);
+                }}
+              >
+                Продай {num(i.quantity)} {GOODS[i.good as GoodId]?.name} · {cities.find((c) => c.id === i.cityId)?.name ?? ''}
+              </button>
+            ))}
+          </div>
+        </Section>
+      )}
       <Table
         head={['Стока', 'Реф. цена', 'Последна', '30 дни', 'Неуд. търсене']}
         rows={(summary.data ?? []).map((g) => [
@@ -234,6 +424,7 @@ export function MarketPanel() {
         ])}
       />
       <Section title={`Книга на поръчките: ${isGood ? GOODS[inst.slice(5) as GoodId]?.name : 'акции'}`}>
+        {good && <GoodInfo good={good} />}
         <div className="grid2">
           <Table
             head={['Купува', 'Кол.']}
@@ -264,11 +455,15 @@ export function MarketPanel() {
         </p>
       </Section>
       <Section title="Нова поръчка">
+        <div className="row seg">
+          <button className={`btn small ${side === 'SELL' ? 'primary' : ''}`} onClick={() => setSide('SELL')}>
+            Продавам
+          </button>
+          <button className={`btn small ${side === 'BUY' ? 'primary' : ''}`} onClick={() => setSide('BUY')}>
+            Купувам
+          </button>
+        </div>
         <div className="row wrap">
-          <select value={side} onChange={(e) => setSide(e.target.value as 'BUY' | 'SELL')} aria-label="Посока">
-            <option value="SELL">Продава</option>
-            <option value="BUY">Купува</option>
-          </select>
           <input type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)} aria-label="Количество" style={{ width: 80 }} />
           <input
             type="number"
@@ -314,11 +509,32 @@ export function MarketPanel() {
             Изпрати
           </AsyncButton>
         </div>
-        {isGood && (
-          <p className="muted small">
-            Търгува активната компания ({companies.find((c) => c.id === activeCompanyId)?.name ?? 'няма'}). Продажбата резервира стоката от склада в избрания
-            град; покупката резервира пари в ескроу. Доставката между градове отнема време и струва транспорт.
-          </p>
+        {isGood && !activeCompanyId && <p className="small bad">Нужна е компания – основете я в панела „Бизнес“.</p>}
+        {isGood && activeCompanyId && good && (
+          <div className="callout small">
+            {side === 'SELL' ? (
+              <>
+                <b>{coName}</b> продава <b>{num(q)}</b> {GOODS[good].name} по <b>{money(unit)}</b> = <b>{money(total)}</b> от склада в {cityName}.{' '}
+                {stock < q ? (
+                  <span className="bad">В склада има само {num(stock)} – първо ги произведете или намалете количеството.</span>
+                ) : (
+                  <span className="good">В склада има {num(stock)}.</span>
+                )}{' '}
+                {bestBid !== undefined && unit <= bestBid
+                  ? `Има купувач на ${money(bestBid)} – ще се продаде веднага.`
+                  : `Ще чака купувач${bestBid !== undefined ? ` (сега най-високата оферта е ${money(bestBid)})` : ''}; жителите и износът купуват всеки ден.`}
+              </>
+            ) : (
+              <>
+                <b>{coName}</b> купува <b>{num(q)}</b> {GOODS[good].name} по до <b>{money(unit)}</b> = <b>{money(total)}</b> за склада в {cityName}. Парите се
+                заделят (ескроу) до сделката.{' '}
+                {myCo.data?.cash !== undefined && myCo.data.cash < total && <span className="bad">Компанията има само {money(myCo.data.cash)}. </span>}
+                {bestAsk !== undefined && unit >= bestAsk
+                  ? `Има продавач на ${money(bestAsk)} – ще се купи веднага.`
+                  : `Ще чака продавач${bestAsk !== undefined ? ` (сега най-евтиният е ${money(bestAsk)})` : ''}.`}
+              </>
+            )}
+          </div>
         )}
       </Section>
       <Section title="Моите отворени поръчки">
@@ -359,6 +575,21 @@ export function MarketPanel() {
   );
 }
 
+/** Кой произвежда стоката и за какво се използва – за да е ясно кое за какво е. */
+function GoodInfo({ good }: { good: GoodId }) {
+  const makers = FACILITY_TYPES.filter((f) => FACILITIES[f].recipe?.outputs[good]);
+  const users = FACILITY_TYPES.filter((f) => FACILITIES[f].recipe?.inputs[good] || (good === 'coal' && FACILITIES[f].coalUse));
+  const g = GOODS[good];
+  return (
+    <p className="small good-info">
+      <b>{g.raw ? 'Суровина' : 'Преработена стока'}.</b> Произвежда се от: {makers.length ? makers.map((f) => FACILITIES[f].name).join(', ') : '—'}.{' '}
+      {users.length > 0 && <>Нужна е за: {users.map((f) => FACILITIES[f].name).join(', ')}. </>}
+      {g.retailPerCapita > 0 && <>Жителите на градовете я купуват всеки ден (до {pct(BALANCE.market.retailMaxPremium, 0)} от реф. цена). </>}
+      Световният пазар изкупува под {pct(BALANCE.market.exportFloor, 0)} от реф. цена.
+    </p>
+  );
+}
+
 export function ContractsPanel() {
   const list = useApi<
     {
@@ -396,6 +627,10 @@ export function ContractsPanel() {
   return (
     <div>
       <h2>Договори за доставка</h2>
+      <p className="small muted">
+        Договорът е споразумение между две компании: продавачът доставя всеки N дни определено количество на фиксирана цена, а купувачът плаща при всяка
+        доставка. Ако продавачът няма стоката в склада, плаща неустойка. Другата страна трябва да приеме офертата.
+      </p>
       <Table
         head={['Продавач → купувач', 'Условия', 'Изпълнение', 'Статус', '']}
         rows={(list.data ?? []).map((c) => [
@@ -499,6 +734,24 @@ export function ContractsPanel() {
             <input type="number" value={f.penalty} onChange={(e) => setF({ ...f, penalty: e.target.value })} />
           </Field>
         </div>
+        {activeCompanyId && f.other && (
+          <div className="callout small">
+            {(() => {
+              const me = allCompanies.data?.find((c) => c.id === activeCompanyId)?.name ?? 'Вашата компания';
+              const other = others.find((o) => o.id === f.other)?.name ?? '';
+              const [seller, buyer] = f.role === 'SELLER' ? [me, other] : [other, me];
+              const n = Number(f.deliveries) || 0;
+              const per = (Number(f.qty) || 0) * (Number(f.price) || 0);
+              return (
+                <>
+                  <b>{seller}</b> доставя на <b>{buyer}</b> по {num(Number(f.qty) || 0)} {GOODS[f.good as GoodId]?.name} на всеки {f.interval} дни, {n} пъти.
+                  Купувачът плаща {money(toCents(per))} при всяка доставка (общо {money(toCents(per * n))}). При липса на стока продавачът плаща{' '}
+                  {money(toCents(Number(f.penalty) || 0))}.
+                </>
+              );
+            })()}
+          </div>
+        )}
         <AsyncButton
           className="btn primary"
           disabled={!activeCompanyId || !f.other}

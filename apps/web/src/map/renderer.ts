@@ -915,6 +915,36 @@ export class IsoRenderer {
     }
   }
 
+  /** Слой с готови цветове по плочки (обхват на услугите). */
+  drawCells(cells: Record<string, [number, number]> | null) {
+    const g = this.overlayLayer;
+    g.clear();
+    if (!cells) return;
+    for (const [k, [color, alpha]] of Object.entries(cells)) {
+      const [x, y] = parseKey(k);
+      diamond(g, x, y);
+      g.fill({ color, alpha });
+    }
+  }
+
+  /** Преглед на обхвата при поставяне на услуга: плочките в радиуса + контур на края. */
+  drawRadius(cx: number, cy: number, r: number, color: number) {
+    const g = this.uiLayer;
+    const R = Math.ceil(r);
+    for (let y = cy - R; y <= cy + R; y++)
+      for (let x = cx - R; x <= cx + R; x++) {
+        const d = Math.hypot(x - cx, y - cy);
+        if (d > r) continue;
+        diamond(g, x, y);
+        g.fill({ color, alpha: 0.1 + 0.16 * (1 - d / (r + 1)) });
+        // край на кръга – плочки, чийто съсед вече е извън радиуса
+        if (Math.hypot(x + 1 - cx, y - cy) > r || Math.hypot(x - 1 - cx, y - cy) > r || Math.hypot(x - cx, y + 1 - cy) > r || Math.hypot(x - cx, y - 1 - cy) > r) {
+          diamond(g, x, y);
+          g.stroke({ width: 1.5, color, alpha: 0.9, pixelLine: true });
+        }
+      }
+  }
+
   /** Подсветка на курсора и преглед на действие с влачене. */
   drawCursor(tiles: { x: number; y: number }[], color: number, valid: boolean) {
     const g = this.uiLayer;

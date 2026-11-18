@@ -28,5 +28,7 @@ export async function compactHistory(prisma: PrismaClient, tick: number): Promis
   n += await prisma.companyStat.deleteMany({ where: { tick: { lt: tick - KEEP_STATS } } }).then((r) => r.count);
   n += await prisma.priceHistory.deleteMany({ where: { tick: { lt: tick - KEEP_PRICES } } }).then((r) => r.count);
   n += await prisma.tickRun.deleteMany({ where: { tick: { lt: tick - KEEP_TICKS } } }).then((r) => r.count);
+  // изпълнени/отменени поръчки (автоматичните продажби правят много) – пазят се 2 часа реално време
+  n += await prisma.marketOrder.deleteMany({ where: { status: { not: 'OPEN' }, updatedAt: { lt: new Date(Date.now() - 2 * 3600_000) } } }).then((r) => r.count);
   return n;
 }

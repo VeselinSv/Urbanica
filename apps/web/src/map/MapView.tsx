@@ -19,6 +19,7 @@ import { IsoRenderer, toTile, type CityRender } from './renderer';
 /** Рисувачът на картата (изометричен 2D). */
 type MapRenderer = IsoRenderer;
 import { computeNeedBadges } from './needBadges';
+import { COVERAGE_ICON, COVERAGE_KINDS, CORE_KINDS, coverageView } from './coverage';
 import { weatherFor } from './atmosphere';
 import { seasonOf } from './sprites';
 import { REQ_ICON } from '../ui/needs';
@@ -43,7 +44,7 @@ const WEATHER_LABEL = { clear: '', rain: '🌧 дъжд', snow: '🌨 сняг',
 import type { NeedBadge } from './life';
 import { Splash } from '../ui/Brand';
 import { get, post } from '../api';
-import { bumpData, errorToast, getState, refreshCities, refreshCity, setState, toast, useDataVersion, useStore, type Tool } from '../store';
+import { bumpData, errorToast, getState, refreshCities, refreshCity, setState, toast, useDataVersion, useStore, type CoverageOf, type Tool } from '../store';
 import { money } from '../format';
 
 const PARCEL = BALANCE.world.parcelSize;
@@ -114,6 +115,7 @@ export function MapView() {
   const me = useStore((s) => s.me);
   const city = useStore((s) => s.city);
   const layer = useStore((s) => s.layer);
+  const coverageOf = useStore((s) => s.coverageOf);
   const tool = useStore((s) => s.tool);
   const focus = useStore((s) => s.focus);
   const issues = useStore((s) => s.issues);
@@ -259,6 +261,10 @@ export function MapView() {
       rr.resetTerrain();
       rr.updateTerrain();
     }
+    if (layer === 'coverage' && city) {
+      rr.drawCells(coverageView(city.tiles as TileMap, city.parcels, coverageOf).cells);
+      return;
+    }
     const dataLayers = ['landValue', 'traffic', 'power', 'water', 'pollution', 'activity'];
     if (!dataLayers.includes(layer) || !city?.isOwner) {
       rr.drawOverlay(null, layer);
@@ -274,7 +280,7 @@ export function MapView() {
         r.current?.drawOverlay(d[layer] ?? {}, layer);
       })
       .catch(() => undefined);
-  }, [layer, city, version]);
+  }, [layer, city, version, coverageOf]);
 
   // Фокус (напр. при избор на град).
   useEffect(() => {
@@ -335,6 +341,12 @@ export function MapView() {
     const tiles = t.kind === 'select' ? [b] : previewTiles(t, a, b);
     const valid = t.kind === 'select' || tiles.every((x) => inTerritory(x.x, x.y));
     rr.drawCursor(tiles, toolColor(t), valid);
+    // при поставяне на услуга – докъде ще стига (полиция, училище, спирка…)
+    if (t.kind === 'service') {
+      const def = SERVICES[t.service as ServiceType];
+      if (def?.radius > 0) rr.drawRadius(b.x, b.y, def.radius, def.color ?? 0x60a5fa);
+    }
+    if (t.kind === 'busstop') rr.drawRadius(b.x, b.y, BALANCE.construction.busStopRadius, SERVICES.bus_depot.color ?? 0xeab308);
   }
 
   /** Подходящо ли е мястото за нов град (същата проверка като на сървъра: суша в България, свободни парцели). */
@@ -578,6 +590,7 @@ export function MapView() {
       {!loading && <Minimap renderer={r} />}
       <div className="map-attrib">Релеф: AWS Terrain Tiles · Граници на областите: geoBoundaries (CC BY 4.0)</div>
       {city?.isOwner && (layer === 'power' || layer === 'water') && <UtilityLegend kind={layer} />}
+      {city && layer === 'coverage' && <CoverageLegend />}
       <div className="map-sky glass" title="Сезон и време">
         <span>{SEASON_LABEL[season]}</span>
         {WEATHER_LABEL[weather] && <span>{WEATHER_LABEL[weather]}</span>}
@@ -910,4 +923,91 @@ export function describeTile(t: TileMap[string]): string {
     return `${ZONES[t.z].name} зона${t.lvl ? `, ниво ${t.lvl}, заетост ${(t.occ * 100).toFixed(0)}%` : t.prog ? ', в строеж' : ', празна'}${t.ab ? ' (изоставена)' : ''}`;
   if (t.t === 'service') return SERVICES[t.s].name;
   return FACILITIES[t.f].name;
+}
+
+/** Легенда на слоя „Обхват на услугите“: избор на услуга, колко сгради са покрити, бутон за още. */
+function CoverageLegend() {
+  const city = useStore((s) => s.city);
+  const of = useStore((s) => s.coverageOf);
+  if (!city) return null;
+  const v = coverageView(city.tiles as TileMap, city.parcels, of);
+  const total = v.covered + v.uncovered;
+  const pick = (k: CoverageOf) => setState({ coverageOf: k });
+  const name = of === 'all' ? 'полиция, пожарна, болница и училище' : SERVICES[of].name.toLowerCase();
+  return (
+    <div className="utility-legend glass coverage-legend">
+      <div className="ul-head">
+        <b>🎯 Обхват на услугите</b>
+        <button className="link small" onClick={() => setState({ layer: 'none' })}>
+          ✕ Затвори
+        </button>
+      </div>
+      <div className="chips coverage-pick">
+        <button className={`chip ${of === 'all' ? 'active' : ''}`} onClick={() => pick('all')}>
+          Всички основни
+        </button>
+        {COVERAGE_KINDS.map((k) => (
+          <button key={k} className={`chip ${of === k ? 'active' : ''}`} onClick={() => pick(k)} title={`${SERVICES[k].name} – радиус ${SERVICES[k].radius} плочки`}>
+            {COVERAGE_ICON[k]} {SERVICES[k].name}
+          </button>
+        ))}
+      </div>
+      {of === 'all' ? (
+        <div className="ul-keys small">
+          <span>
+            <i style={{ background: '#22c55e' }} /> и четирите
+          </span>
+          <span>
+            <i style={{ background: '#eab308' }} /> 2 от 4
+          </span>
+          <span>
+            <i style={{ background: '#ef4444' }} /> нито една
+          </span>
+        </div>
+      ) : (
+        <div className="ul-keys small">
+          <span>
+            <i style={{ background: `#${(SERVICES[of].color ?? 0x60a5fa).toString(16).padStart(6, '0')}` }} /> обхват (по-плътно = по-близо)
+          </span>
+          <span>
+            <i style={{ background: '#ef4444' }} /> сграда без обхват
+          </span>
+        </div>
+      )}
+      <div className="small">
+        {total > 0 ? (
+          <>
+            Покрити сгради: <b className={v.uncovered ? 'bad' : 'good'}>{v.covered}</b> от {total}
+            {v.uncovered > 0 && <> · без {name}: <b className="bad">{v.uncovered}</b></>}
+          </>
+        ) : (
+          <span className="muted">Още няма сгради.</span>
+        )}
+        {of !== 'all' && (
+          <span className="muted">
+            {' '}
+            · радиус {of === 'bus_depot' ? `${SERVICES.bus_depot.radius} (депо), ${BALANCE.construction.busStopRadius} (всяка спирка)` : SERVICES[of].radius} плочки
+          </span>
+        )}
+      </div>
+      {of === 'bus_depot' && !Object.values(city.tiles as TileMap).some((t) => t.t === 'service' && t.s === 'bus_depot') && (
+        <div className="small bad">Спирките работят само ако в града има автобусно депо.</div>
+      )}
+      {(v.uncovered > 0 || v.sources === 0) && of !== 'all' && (
+        <button className="btn primary small" onClick={() => setState({ tool: { kind: 'service', service: of } })}>
+          + {SERVICES[of].name}
+        </button>
+      )}
+      {v.uncovered > 0 && of === 'all' && (
+        <div className="row wrap">
+          {CORE_KINDS.map((k) => (
+            <button key={k} className="btn small" onClick={() => setState({ tool: { kind: 'service', service: k }, coverageOf: k })}>
+              + {COVERAGE_ICON[k]} {SERVICES[k].name}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="small muted">При поставяне на услуга кръгът показва докъде ще стига.</div>
+    </div>
+  );
 }

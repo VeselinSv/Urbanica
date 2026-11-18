@@ -3,6 +3,7 @@ import { ECON } from './scale';
 import { FACILITY_TYPES, GOOD_IDS, SERVICE_TYPES, TECH_IDS, ZONE_TYPES } from './catalog';
 import { BALANCE } from './balance';
 import { JUNCTION_TYPES, ROAD_CLASSES } from './types';
+import { COMPANY_POLICY_LIMITS } from './companyPolicy';
 
 const L = BALANCE.taxes.limits;
 const coord = z
@@ -169,3 +170,12 @@ export const FriendSchema = z.object({ username: z.string().min(3).max(24) });
 export function zodMessage(err: z.ZodError): string {
   return err.issues.map((i) => `${i.path.map(String).join('.') || 'вход'}: ${i.message}`).join('; ');
 }
+
+export const CompanyPolicySchema = z.object({
+  wageLevel: z.number().min(COMPANY_POLICY_LIMITS.wageLevel[0]).max(COMPANY_POLICY_LIMITS.wageLevel[1]).optional(),
+  maintenance: z.number().min(COMPANY_POLICY_LIMITS.maintenance[0]).max(COMPANY_POLICY_LIMITS.maintenance[1]).optional(),
+  autoSell: z.boolean().optional(),
+  sellPrice: z.number().min(COMPANY_POLICY_LIMITS.sellPrice[0]).max(COMPANY_POLICY_LIMITS.sellPrice[1]).optional(),
+  keepStock: z.number().int().min(COMPANY_POLICY_LIMITS.keepStock[0]).max(COMPANY_POLICY_LIMITS.keepStock[1]).optional(),
+});
+export type CompanyPolicyInput = z.infer<typeof CompanyPolicySchema>;

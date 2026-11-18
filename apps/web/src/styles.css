@@ -1932,3 +1932,83 @@ button.avatar:hover {
 .mood li.bad b {
   color: var(--bad);
 }
+
+/* Обхват на услугите */
+.coverage-legend {
+  max-width: 380px;
+}
+.coverage-pick {
+  gap: 4px;
+}
+.coverage-pick .chip {
+  cursor: pointer;
+  border: 1px solid transparent;
+  font-size: 11px;
+}
+.coverage-pick .chip.active {
+  border-color: var(--accent2);
+  background: rgba(56, 189, 248, 0.18);
+}
+
+/* От какво се нуждае градът */
+.needs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.needs-list li {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.08);
+  border-left: 3px solid var(--muted);
+}
+.needs-list li.need-3 {
+  border-left-color: var(--bad);
+  background: rgba(248, 113, 113, 0.1);
+}
+.needs-list li.need-2 {
+  border-left-color: var(--warn);
+}
+.needs-list li.need-1 {
+  border-left-color: var(--accent2);
+}
+.need-icon {
+  font-size: 16px;
+  text-align: center;
+}
+.need-text b {
+  display: block;
+  font-size: 13px;
+}
+.need-text small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+/* Търговия: помощ и обяснения */
+details.callout.help summary {
+  cursor: pointer;
+  list-style: none;
+}
+details.callout.help ol {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+.good-info {
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+.row.seg {
+  gap: 4px;
+  margin-bottom: 6px;
+}

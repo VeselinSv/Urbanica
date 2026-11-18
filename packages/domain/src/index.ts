@@ -20,3 +20,4 @@ export * from './simulation';
 export * from './simloop';
 export * from './analytics';
 export * from './maintenance';
+export * from './autosell';

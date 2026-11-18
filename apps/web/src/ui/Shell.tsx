@@ -201,6 +201,7 @@ const LAYERS: { id: Layer; label: string; icon: string }[] = [
   { id: 'water', label: 'Вода', icon: '💧' },
   { id: 'pollution', label: 'Замърсяване', icon: '🏭' },
   { id: 'activity', label: 'Икон. активност', icon: '📈' },
+  { id: 'coverage', label: 'Обхват на услугите', icon: '🎯' },
 ];
 
 const ROAD_TOOLS = [

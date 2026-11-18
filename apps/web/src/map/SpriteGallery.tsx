@@ -14,9 +14,14 @@ export function SpriteGallery() {
     const res = scale;
     const only = new URLSearchParams(location.search).get('only');
     const keys: BuildingKey[] = [];
+    const qs = new URLSearchParams(location.search);
+    // ?n=10 – повече варианти; ?span=x|y|xy – обединени групи (2 или 4 парцела)
+    const nVar = Number(qs.get('n') ?? '3');
+    const span = qs.get('span') as 'x' | 'y' | 'xy' | null;
     for (const z of ['R', 'C', 'O', 'I', 'L', 'A', 'H'])
-      for (let lvl = 1; lvl <= 3; lvl++) for (let v = 0; v < 3; v++) keys.push({ k: 'zone', z, lvl, v: v * 4 + lvl, face: 'left' });
-    for (const s of SERVICE_TYPES) keys.push({ k: 'service', s, v: 1, face: 'left' });
+      for (let lvl = 1; lvl <= 3; lvl++)
+        for (let v = 0; v < nVar; v++) keys.push({ k: 'zone', z, lvl, v: nVar > 3 ? v * 11 + lvl : v * 4 + lvl, face: 'left', ...(span ? { span } : {}) });
+    for (const s of SERVICE_TYPES) keys.push({ k: 'service', s, v: 1, face: 'left', ...(span && s === 'park' ? { span } : {}) });
     for (const f of FACILITY_TYPES) keys.push({ k: 'facility', f, v: 1, face: 'left' });
     for (const t of ['oak', 'birch', 'poplar', 'willow', 'conifer', 'pine', 'bush'] as TreeKind[])
       for (let v = 0; v < 3; v++) keys.push({ k: 'tree', t, v, size: 2.2 + v * 0.3 });
@@ -30,8 +35,8 @@ export function SpriteGallery() {
     keys.push(...list);
     const cols = Number(new URLSearchParams(location.search).get('cols') ?? '12');
     const rows = Math.ceil(keys.length / cols);
-    const CW = 120;
-    const CH = 130;
+    const CW = Number(qs.get('cw') ?? (span ? '200' : '120'));
+    const CH = Number(qs.get('ch') ?? (span ? '240' : '130'));
     const W = cols * CW * scale;
     const H = (rows * CH + 60) * scale;
     cv.width = W;
@@ -43,7 +48,7 @@ export function SpriteGallery() {
       const col = i % cols;
       const row = Math.floor(i / cols);
       const cx = (60 + col * CW) * scale;
-      const cy = (120 + row * CH) * scale;
+      const cy = (CH - 10 + row * CH) * scale;
       // плочка (ромб) под обекта
       g.fillStyle = '#8fb662';
       g.beginPath();
