@@ -244,7 +244,55 @@ export class WorldGenerator {
   /** Дали плочката е годна за строителство (суша без реки/вода, в България). */
   buildable(x: number, y: number): boolean {
     if (!this.inCountry(x, y)) return false;
-    return !isWater(this.terrain[y * this.size + x] as Terrain);
+    return !isWater(this.terrain[y * this.size + x] as Terrain) && !this.riverOver(x, y);
+  }
+
+  private riverMask: Uint8Array | null = null;
+  /**
+   * Минава ли нарисуваната река през плочката. Реките се рисуват като плавни криви с ширина и минават и през
+   * плочки, които по терен са „суша“: там пътят е мост, а сгради не се строят (иначе стоят във водата).
+   * Маската се смята веднъж за цялата карта (по отсечките на реките), после проверката е мигновена.
+   */
+  riverOver(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    return (this.riverMask ??= this.buildRiverMask())[y * this.size + x] === 1;
+  }
+
+  private buildRiverMask(): Uint8Array {
+    const N = this.size;
+    const mask = new Uint8Array(N * N);
+    for (const r of this.country.rivers) {
+      const p = r.points;
+      for (let i = 0; i < p.length - 1; i++) {
+        const a = p[i];
+        const b = p[i + 1];
+        if (this.country.water[Math.floor(a.y) * N + Math.floor(a.x)] === WATER_OCEAN) continue;
+        const reach = (a.w + b.w) / 4 + 0.42;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const L2 = dx * dx + dy * dy || 1;
+        const x0 = Math.max(0, Math.floor(Math.min(a.x, b.x) - reach - 1));
+        const x1 = Math.min(N - 1, Math.ceil(Math.max(a.x, b.x) + reach + 1));
+        const y0 = Math.max(0, Math.floor(Math.min(a.y, b.y) - reach - 1));
+        const y1 = Math.min(N - 1, Math.ceil(Math.max(a.y, b.y) + reach + 1));
+        for (let ty = y0; ty <= y1; ty++)
+          for (let tx = x0; tx <= x1; tx++) {
+            const k = ty * N + tx;
+            if (mask[k]) continue;
+            const cx = tx + 0.5;
+            const cy = ty + 0.5;
+            const t = Math.max(0, Math.min(1, ((cx - a.x) * dx + (cy - a.y) * dy) / L2));
+            if (Math.hypot(cx - (a.x + dx * t), cy - (a.y + dy * t)) <= reach) mask[k] = 1;
+          }
+      }
+    }
+    return mask;
+  }
+
+  /** Вода за строителство на сгради: водна плочка или плочка, през която е нарисувана река. */
+  onWater(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return true;
+    return isWater(this.terrain[y * this.size + x] as Terrain) || this.riverOver(x, y);
   }
 
   /** Строителен множител на цената според терена: мост над река 4x, над езеро/залив 6x; в открито море – не. */

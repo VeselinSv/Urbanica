@@ -3,9 +3,9 @@
  * и има бутон, който избира точния инструмент. Проверките са върху плочките и статистиката на града.
  */
 import { useState } from 'react';
-import { hasSidewalk, type TileMap } from '@gce/shared';
+import { BALANCE, SERVICES, ZONES, hasSidewalk, type ServiceType, type TileMap } from '@gce/shared';
 import { getState, setState, useStore, type Tool } from '../store';
-import { num } from '../format';
+import { money, num } from '../format';
 
 type CityLike = NonNullable<ReturnType<typeof getState>['city']>;
 
@@ -24,7 +24,23 @@ export interface Goal {
   /** Действие вместо инструмент (напр. отваряне на панел). */
   run?: () => void;
   button?: string;
+  /** Подробни стъпки: какво точно да се направи, къде, колко струва и какво ще стане. */
+  steps?: (c: CityLike) => string[];
 }
+
+const price = (s: ServiceType) => money(SERVICES[s].cost);
+const zonePrice = (z: keyof typeof ZONES) => money(ZONES[z].zoningCost);
+const streetPrice = () => money(Math.round(BALANCE.construction.roadCost * BALANCE.construction.roadClasses.street.cost));
+type Stats = {
+  population?: number;
+  unemploymentRate?: number;
+  workforce?: number;
+  vacancies?: number;
+  power?: { supply?: number; demand?: number };
+  water?: { supply?: number; demand?: number };
+  demand?: Record<string, number>;
+};
+export const statsOf = (c: CityLike) => (c.stats ?? {}) as Stats;
 
 const tilesOf = (c: CityLike) => Object.values(c.tiles as TileMap);
 const count = (c: CityLike, f: (t: TileMap[string]) => boolean) => tilesOf(c).filter(f).length;
@@ -45,6 +61,12 @@ export const GOALS: Goal[] = [
     progress: (c) => ({ v: Math.min(1, count(c, (t) => t.t === 'road') / 6), label: `${count(c, (t) => t.t === 'road')} / 6 плочки път` }),
     tool: { kind: 'road', cls: 'street' },
     button: 'Строй улица',
+    steps: () => [
+      `Отляво натиснете „Пътища“ → „Улица“ (${streetPrice()} на плочка; мост над река струва ×4).`,
+      'Натиснете върху плочка в златистата рамка на града и влачете – пътят върви по права линия или с един завой. Пуснете, за да го построите.',
+      'Направете поне 6 плочки. Оставете празна земя от двете страни: всяка сграда трябва да е точно до пътя (на 1 плочка).',
+      'Удобно е улиците да са успоредни през 2–3 плочки – между тях се побират къщи от двете страни.',
+    ],
   },
   {
     id: 'homes',
@@ -55,6 +77,12 @@ export const GOALS: Goal[] = [
     progress: (c) => ({ v: Math.min(1, zones(c, 'R') / 8), label: `${zones(c, 'R')} / 8 жилищни парцела` }),
     tool: { kind: 'zone', zone: 'R' },
     button: 'Жилищна зона',
+    steps: (c) => [
+      `Отляво „Зони“ → „Жилищна“ (${zonePrice('R')} на парцел).`,
+      'Влачете правоъгълник от плочки точно до пътя – само плочките, които докосват пътя, ще получат къщи.',
+      `Трябват поне 8 парцела (сега: ${zones(c, 'R')}). Не зонирайте върху реката – там може да мине само път (мост).`,
+      'Къщите се строят сами за ~3 дни, но само ако има ток и вода (следващите етапи).',
+    ],
   },
   {
     id: 'power',
@@ -64,6 +92,11 @@ export const GOALS: Goal[] = [
     done: (c) => svc(c, 'power_wind', 'power_coal') >= 1,
     tool: { kind: 'service', service: 'power_wind' },
     button: 'Вятърна централа',
+    steps: (c) => [
+      `Отляво „Услуги“ → „${SERVICES.power_wind.name}“ (${price('power_wind')}, дава ${SERVICES.power_wind.powerSupply} MW, без замърсяване) или „${SERVICES.power_coal.name}“ (${price('power_coal')}, ${SERVICES.power_coal.powerSupply} MW, но замърсява и гори въглища).`,
+      'Щракнете върху празна плочка точно до път. Сложете централата далеч от къщите – тя не трябва да е в центъра.',
+      `Нужно е повече ток, отколкото се потребява: сега ${num(statsOf(c).power?.supply ?? 0)} / ${num(statsOf(c).power?.demand ?? 0)} MW (дадено / нужно). Лентата „Ток“ горе трябва да е синя, не червена.`,
+    ],
   },
   {
     id: 'water',
@@ -73,6 +106,12 @@ export const GOALS: Goal[] = [
     done: (c) => svc(c, 'water_pump') >= 1,
     tool: { kind: 'service', service: 'water_pump' },
     button: 'Помпена станция',
+    steps: (c) => [
+      `Отляво „Услуги“ → „${SERVICES.water_pump.name}“ (${price('water_pump')}, до ${SERVICES.water_pump.waterSupply} м³ на ден).`,
+      'Сложете я на суша точно до път и до река или езеро – там дава най-много вода. Върху самата река не може.',
+      'Помпата иска малко ток – първо трябва да има централа.',
+      `Сега: ${num(statsOf(c).water?.supply ?? 0)} / ${num(statsOf(c).water?.demand ?? 0)} м³ (дадено / нужно). Ако лентата „Вода“ стане червена, постройте още една помпа.`,
+    ],
   },
   {
     id: 'jobs',
@@ -91,6 +130,7 @@ export const GOALS: Goal[] = [
       const z = zones(c, 'I') === 0 ? 'I' : zones(c, 'C') === 0 ? 'C' : bestJobZone(c).zone;
       return { tool: { kind: 'zone', zone: z }, button: z === 'I' ? 'Индустриална зона' : z === 'C' ? 'Търговска зона' : 'Офисна зона' };
     },
+    steps: (c) => jobSteps(c),
   },
   {
     id: 'school',
@@ -100,6 +140,11 @@ export const GOALS: Goal[] = [
     done: (c) => svc(c, 'school') >= 1,
     tool: { kind: 'service', service: 'school' },
     button: 'Училище',
+    steps: () => [
+      `Отляво „Услуги“ → „${SERVICES.school.name}“ (${price('school')}, ${SERVICES.school.capacity} ученици).`,
+      `Обслужва къщите в радиус ${SERVICES.school.radius} плочки – сложете го в средата на жилищния квартал, до път.`,
+      'С „Слоеве“ → „Обхват на услугите“ виждате кои къщи са извън обхвата. За по-голям град трябват няколко училища.',
+    ],
   },
   {
     id: 'sidewalks',
@@ -113,6 +158,11 @@ export const GOALS: Goal[] = [
     },
     tool: { kind: 'sidewalk' },
     button: 'Тротоари',
+    steps: (c) => [
+      `Отляво „Пътища“ → „Тротоар / алея“ (${money(BALANCE.construction.sidewalkCost)} на плочка).`,
+      'Влачете по съществуващите улици между жилищата и магазините – тротоарът се добавя към пътя, не заема място.',
+      `Нужни са поне 10 улици с тротоар (сега: ${count(c, (t) => t.t === 'road' && hasSidewalk(t))}). Магистралите нямат тротоари.`,
+    ],
   },
   {
     id: 'safety',
@@ -123,6 +173,11 @@ export const GOALS: Goal[] = [
     tool: { kind: 'service', service: 'police_station' },
     button: 'Полиция',
     run: undefined,
+    steps: () => [
+      `„Услуги“ → „${SERVICES.police_station.name}“ (${price('police_station')}) и „${SERVICES.fire_station.name}“ (${price('fire_station')}).`,
+      `Всяка обслужва радиус ${SERVICES.police_station.radius} плочки – сложете ги между жилищата и магазините, до път.`,
+      'Проверете със „Слоеве“ → „Обхват на услугите“, че целият град е оцветен; ако не е – добавете още една на непокритото място.',
+    ],
   },
   {
     id: 'pop1000',
@@ -133,6 +188,12 @@ export const GOALS: Goal[] = [
     progress: popGoal(1000),
     tool: { kind: 'zone', zone: 'R' },
     button: 'Още жилища',
+    steps: (c) => [
+      `Сега: ${num(pop(c))} жители. Отворете панела „Град“ вдясно и вижте лентите „Търсене по зони“.`,
+      'Зонирайте това, което има най-голямо търсене (най-дългата лента): жилища, търговия, индустрия или офиси.',
+      'Пазете баланс: на 2 жилищни парцела – около 1 парцел работа (търговия/индустрия), иначе расте безработицата.',
+      'Следете тока и водата горе – новите сгради не се строят, ако лентите са червени.',
+    ],
   },
   {
     id: 'health',
@@ -142,6 +203,11 @@ export const GOALS: Goal[] = [
     done: (c) => svc(c, 'clinic') >= 1 && svc(c, 'park') >= 1,
     tool: { kind: 'service', service: 'clinic' },
     button: 'Болница',
+    steps: () => [
+      `„Услуги“ → „${SERVICES.clinic.name}“ (${price('clinic')}, за ${num(SERVICES.clinic.capacity ?? 0)} души, радиус ${SERVICES.clinic.radius}).`,
+      `„Услуги“ → „${SERVICES.park.name}“ (${price('park')}) – сложете го между къщите; съседните паркове се сливат в един голям.`,
+      'Паркът намалява замърсяването и вдига цената на земята около себе си.',
+    ],
   },
   {
     id: 'utilities',
@@ -151,6 +217,11 @@ export const GOALS: Goal[] = [
     done: (c) => svc(c, 'sewage_plant') >= 1 && svc(c, 'landfill') >= 1,
     tool: { kind: 'service', service: 'sewage_plant' },
     button: 'Пречиствателна',
+    steps: () => [
+      `„Услуги“ → „${SERVICES.sewage_plant.name}“ (${price('sewage_plant')}) и „${SERVICES.landfill.name}“ (${price('landfill')}).`,
+      'И двете миришат и замърсяват – сложете ги в края на града, до индустрията и далеч от жилищата, но до път.',
+      'След това сигналите „канализация“ и „боклук“ спират да се появяват.',
+    ],
   },
   {
     id: 'offices',
@@ -161,6 +232,12 @@ export const GOALS: Goal[] = [
     progress: (c) => ({ v: Math.min(1, built(c, 'O') / 2), label: `${built(c, 'O')} / 2 построени офиса` }),
     tool: { kind: 'zone', zone: 'O' },
     button: 'Офисна зона',
+    steps: (c) => [
+      `„Зони“ → „Офисна“ (${zonePrice('O')} на парцел), до път с ток и вода.`,
+      `Офисите се строят само при достатъчно висока цена на земята (поне ${Math.round(ZONES.O.landValueReq[0] * 100)}%): сложете ги до парк, училище и полиция, в центъра, не до индустрията.`,
+      `Искат образовани работници – ${Math.round(ZONES.O.eduMix[1] * 100)}% със средно и ${Math.round(ZONES.O.eduMix[2] * 100)}% с висше образование: трябват училище и по-късно университет.`,
+      `Сега има ${built(c, 'O')} построени офиса от 2. Ако парцелите стоят празни – „Слоеве“ → „Стойност на земята“ показва къде става.`,
+    ],
   },
   {
     id: 'transit',
@@ -170,6 +247,11 @@ export const GOALS: Goal[] = [
     done: (c) => svc(c, 'bus_depot') >= 1 && count(c, (t) => t.t === 'road' && !!t.st) >= 2,
     tool: { kind: 'service', service: 'bus_depot' },
     button: 'Автобусно депо',
+    steps: () => [
+      `„Услуги“ → „${SERVICES.bus_depot.name}“ (${price('bus_depot')}), до път.`,
+      `„Пътища“ → „Автобусна спирка“ (${money(BALANCE.construction.busStopCost)}): щракнете върху улица – поне 2 спирки, в жилищния квартал и при работните места.`,
+      `Всяка спирка обслужва радиус ${BALANCE.construction.busStopRadius} плочки около себе си.`,
+    ],
   },
   {
     id: 'pop5000',
@@ -180,6 +262,11 @@ export const GOALS: Goal[] = [
     progress: popGoal(5000),
     tool: { kind: 'parcel' },
     button: 'Купи земя',
+    steps: (c) => [
+      `Сега: ${num(pop(c))} жители, безработица ${Math.round((statsOf(c).unemploymentRate ?? 0) * 100)}%.`,
+      'Отляво „Земя“ → щракнете върху парцел до вашата територия, за да го купите.',
+      'Продължете улиците в новия парцел и зонирайте по търсенето – новите квартали също искат училище, полиция и пожарна в обхват.',
+    ],
   },
   {
     id: 'company',
@@ -189,6 +276,11 @@ export const GOALS: Goal[] = [
     done: (_c, ctx) => ctx.companies > 0,
     run: () => setState({ panel: 'companies', panelOpen: true }),
     button: 'Към „Бизнес“',
+    steps: () => [
+      'Вдясно „Бизнес“ → бутона „Основи“: изберете име, град и капитал (взима се от личните ви пари, не от бюджета на града).',
+      'Първото предприятие: ферма (на плодородна земя) или дърводобив (до гора) – суровините се продават веднага на световния пазар.',
+      'Предприятието трябва да е точно до път. В панела на компанията „Развитие“ показва печалбата и следващата стъпка.',
+    ],
   },
   {
     id: 'pop10000',
@@ -199,6 +291,11 @@ export const GOALS: Goal[] = [
     progress: popGoal(10000),
     tool: { kind: 'service', service: 'university' },
     button: 'Университет',
+    steps: (c) => [
+      `Сега: ${num(pop(c))} от 10 000 жители.`,
+      `„Услуги“ → „${SERVICES.university.name}“ (${price('university')}, радиус ${SERVICES.university.radius} плочки – един стига за целия град).`,
+      'Университетът дава хора с висше образование – те работят в офисите и високите технологии и плащат най-много данъци.',
+    ],
   },
 ];
 
@@ -223,6 +320,32 @@ export function bestJobZone(c: CityLike) {
       ? `Най-голямо е търсенето на ${best.name} (${Math.round(v * 100)}%) – зонирайте ${best.name} до път с ток и вода.`
       : `Зонирайте ${best.name} до път с ток и вода – свободните работници привличат бизнес и търсенето ще расте.`;
   return { ...best, why };
+}
+
+/** Подробни стъпки срещу безработицата / за работни места – с числата на града. */
+export function jobSteps(c: CityLike): string[] {
+  const S = statsOf(c);
+  const job = bestJobZone(c);
+  const unemployed = Math.round((S.workforce ?? 0) * (S.unemploymentRate ?? 0));
+  const z = ZONES[job.zone];
+  const perLot = z.capacity[0];
+  const lots = Math.max(1, Math.ceil(unemployed / perLot));
+  const edu = z.eduMix;
+  const out = [
+    unemployed > 0
+      ? `Без работа са около ${num(unemployed)} души. Един нов парцел „${z.name}“ дава ~${perLot} работни места (ниво 1), значи трябват около ${num(lots)} парцела.`
+      : `Един парцел „${z.name}“ дава ~${perLot} работни места на ниво 1 и до ${z.capacity[2]} на ниво 3.`,
+    `Отляво „Зони“ → „${z.name}“ (${money(z.zoningCost)} на парцел) и влачете по плочките точно до път (на 1 плочка от него).`,
+    'Парцелите трябва да имат ток и вода – лентите горе да не са червени, иначе сградите не се строят.',
+  ];
+  if (job.zone === 'I') out.push('Индустрията замърсява – сложете я в края на града, далеч от къщите.');
+  if (job.zone === 'C') out.push('Магазините растат най-добре между жилищата – хората пазаруват близо до дома.');
+  if (job.zone === 'O')
+    out.push(
+      `Офисите искат цена на земята поне ${Math.round(z.landValueReq[0] * 100)}% (до парк и училище, далеч от индустрия) и образовани хора (${Math.round(edu[1] * 100)}% средно, ${Math.round(edu[2] * 100)}% висше) – без училище ще стоят празни.`,
+    );
+  out.push('Сградата се строи за няколко дни; после безработицата пада и данъците растат (вижте „Пари“).');
+  return out;
 }
 
 export function planState(c: CityLike) {
@@ -273,6 +396,13 @@ export function DevPlan() {
               </div>
               {p.label}
             </div>
+          )}
+          {cur.steps && (
+            <ol className="adv-steps plan-steps">
+              {cur.steps(city).map((x, i) => (
+                <li key={i}>{x}</li>
+              ))}
+            </ol>
           )}
           {goalButton(cur, city) && (
             <button className="btn primary small" onClick={() => runGoal(cur)}>

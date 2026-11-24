@@ -22,7 +22,7 @@ import { Panels, PANEL_GROUPS, groupOf } from './panels/Panels';
 import { IssueCard, initials } from './panels/IssuesPanel';
 import { BRAND, BrandLockup } from './Brand';
 import { resetGame } from './reset';
-import { GOALS, bestJobZone, goalButton, planState, runGoal } from './plan';
+import { GOALS, bestJobZone, goalButton, jobSteps, planState, runGoal } from './plan';
 import { REQ_ICON, needsLine, reqTool, reqToolLabel, toolNeeds } from './needs';
 
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
@@ -453,6 +453,13 @@ interface Advice {
   icon: string;
   text: string;
   action?: { label: string; run: () => void };
+  /** Подробни стъпки – какво точно, къде, колко струва, какво ще стане. */
+  steps?: string[];
+}
+
+/** Стъпките на етап от плана (по id) за текущия град. */
+function goalSteps(id: string, city: NonNullable<ReturnType<typeof getState>['city']>): string[] | undefined {
+  return GOALS.find((g) => g.id === id)?.steps?.(city);
 }
 
 function advice(): Advice | null {
@@ -463,6 +470,12 @@ function advice(): Advice | null {
       icon: '🌱',
       text: 'Добре дошли, кмете! Изберете на картата на България къде да бъде вашият град – получавате земя и стартов капитал.',
       action: { label: 'Избери място', run: () => setState({ tool: { kind: 'found', name: '' } }) },
+      steps: [
+        'Натиснете „Избери място“ и напишете име на града.',
+        'Движете мишката над картата: зелената рамка значи, че мястото става (суша в България, свободна земя), червената – че не става.',
+        'Добро място: равна земя до река (за вода и мостове), не в планината (там пътищата са тунели и са скъпи) и не върху морето.',
+        'Щракнете – получавате няколко парцела земя и стартов бюджет за града.',
+      ],
     };
   if (!city || !city.isOwner) return null;
   const tiles = city.tiles as TileMap;
@@ -473,24 +486,28 @@ function advice(): Advice | null {
       icon: '🛣',
       text: 'Започнете с път – всичко в града се строи до пътища.',
       action: { label: 'Строй път', run: () => setState({ tool: { kind: 'road', cls: 'street' } }) },
+      steps: goalSteps('road', city),
     };
   if (!has((t) => t.t === 'zone' && t.z === 'R'))
     return {
       icon: '🏠',
       text: 'Зонирайте жилища до пътя – хората ще дойдат сами.',
       action: { label: 'Жилищна зона', run: () => setState({ tool: { kind: 'zone', zone: 'R' } }) },
+      steps: goalSteps('homes', city),
     };
   if (!has((t) => t.t === 'service' && (t.s === 'power_coal' || t.s === 'power_wind')))
     return {
       icon: '⚡',
       text: 'Без ток сградите не растат. Постройте централа.',
       action: { label: 'Централа', run: () => setState({ tool: { kind: 'service', service: 'power_wind' } }) },
+      steps: goalSteps('power', city),
     };
   if (!has((t) => t.t === 'service' && t.s === 'water_pump'))
     return {
       icon: '💧',
       text: 'Нужна е вода – помпена станция до река или езеро.',
       action: { label: 'Помпа', run: () => setState({ tool: { kind: 'service', service: 'water_pump' } }) },
+      steps: goalSteps('water', city),
     };
   const open = st.issues.filter((i) => i.status === 'OPEN');
   const critical = open.find((i) => i.severity >= 2);
@@ -498,6 +515,11 @@ function advice(): Advice | null {
     return {
       icon: ISSUE_TYPES[critical.kind]?.icon ?? '🚨',
       text: `${critical.reporter}: „${critical.message}“`,
+      steps: [
+        `Проблем: ${ISSUE_TYPES[critical.kind]?.name ?? 'сигнал'} – спешен (жителите са недоволни, а ако не се реши, става по-лошо).`,
+        `Натиснете „Към сигнала“ – картата отива на мястото, а в панела пише цената и срокът на ремонта${ISSUE_TYPES[critical.kind] ? ` (${money(ISSUE_TYPES[critical.kind].fixCost)}, ${ISSUE_TYPES[critical.kind].fixDays} дни)` : ''}.`,
+        'Натиснете „Реши“ в панела. Ако сигналите от един вид се повтарят, липсва услуга наблизо (полиция, пожарна, болница…) – постройте я там.',
+      ],
       action: {
         label: 'Към сигнала',
         run: () => setState({ panel: 'issues', panelOpen: true, selectedIssue: critical.id, focus: { x: critical.x, y: critical.y, n: Date.now() } }),
@@ -510,12 +532,14 @@ function advice(): Advice | null {
       icon: '⚡',
       text: `${waitingZones} празни парцела чакат ток – без ток не се строи.`,
       action: { label: 'Централа', run: () => setState({ tool: { kind: 'service', service: 'power_wind' } }) },
+      steps: goalSteps('power', city),
     };
   if (waitingZones >= 4 && (city.stats?.water?.supply ?? 1) <= 0)
     return {
       icon: '💧',
       text: `${waitingZones} празни парцела чакат вода – постройте помпена станция.`,
       action: { label: 'Помпа', run: () => setState({ tool: { kind: 'service', service: 'water_pump' } }) },
+      steps: goalSteps('water', city),
     };
   const blockers = Object.entries(city.stats?.upgradeBlockers ?? {})
     .filter(([k]) => !['occupancy', 'demand', 'land_value'].includes(k))
@@ -528,6 +552,7 @@ function advice(): Advice | null {
       icon: '💼',
       text: `Безработица ${Math.round((S?.unemploymentRate ?? 0) * 100)}% – хората нямат работа и не плащат данъци. ${job.why}`,
       action: { label: job.label, run: () => setState({ tool: { kind: 'zone', zone: job.zone } }) },
+      steps: jobSteps(city),
     };
   }
   if ((S?.workforce ?? 0) > 0 && (S?.vacancies ?? 0) > (S?.workforce ?? 0) * 0.25)
@@ -535,6 +560,11 @@ function advice(): Advice | null {
       icon: '🏠',
       text: `${S?.vacancies} свободни работни места, но няма кой да работи – зонирайте още жилища.`,
       action: { label: 'Жилищна зона', run: () => setState({ tool: { kind: 'zone', zone: 'R' } }) },
+      steps: [
+        `Един жилищен парцел събира ~${ZONES.R.capacity[0]} души (къща), ~${ZONES.R.capacity[1]} (кооперация) и до ~${ZONES.R.capacity[2]} (жилищна сграда, ниво 3). За ${num(S?.vacancies ?? 0)} места трябват около ${num(Math.ceil((S?.vacancies ?? 0) / ZONES.R.capacity[0]))} нови парцела.`,
+        `„Зони“ → „Жилищна“ (${money(ZONES.R.zoningCost)} на парцел), точно до път, близо до работните места – хората ходят пеша или с автобус.`,
+        'Жилищата искат ток и вода; училище, болница и парк в обхват ги надграждат до по-високи сгради с повече хора.',
+      ],
     };
   // първите етапи от плана са по-важни от надграждането
   const early = planState(city);
@@ -544,6 +574,7 @@ function advice(): Advice | null {
       icon: g.icon,
       text: `Етап ${early.next + 1}/${early.total} – ${g.title}: ${g.why}`,
       action: goalButton(g, city) ? { label: goalButton(g, city)!, run: () => runGoal(g) } : undefined,
+      steps: g.steps?.(city),
     };
   }
   if (blockers.length) {
@@ -554,6 +585,15 @@ function advice(): Advice | null {
       icon: REQ_ICON[req] ?? '⬆',
       text: `${n === 1 ? '1 сграда не може да се надгради' : `${n} сгради не могат да се надградят`}: липсва „${UPGRADE_REQUIREMENT_LABELS[req]}“.`,
       action: fix ? { label: reqToolLabel(req), run: () => setState({ tool: fix }) } : undefined,
+      steps: [
+        'По-високото ниво означава повече жители / работни места и повече данъци от същата плочка.',
+        fix?.kind === 'service'
+          ? `Постройте „${SERVICES[fix.service as ServiceType].name}“ (${money(SERVICES[fix.service as ServiceType].cost)})${SERVICES[fix.service as ServiceType].radius ? ` – обслужва радиус ${SERVICES[fix.service as ServiceType].radius} плочки, сложете я до засегнатите сгради` : ''}, точно до път.`
+          : fix
+            ? `Натиснете „${reqToolLabel(req)}“ и го добавете до засегнатите сгради.`
+            : 'Това условие идва от търсенето и цената на земята – растат с паркове, училища и по-малко замърсяване.',
+        'Кои сгради чакат: „Слоеве“ → „Обхват на услугите“, или щракнете върху сграда – в панела пише какво ѝ липсва.',
+      ],
     };
   }
   if (open.length)
@@ -561,6 +601,11 @@ function advice(): Advice | null {
       icon: '🚨',
       text: `${open.length} нерешени сигнала от граждани.`,
       action: { label: 'Виж', run: () => setState({ panel: 'issues', panelOpen: true }) },
+      steps: [
+        'Всеки нерешен сигнал намалява настроението на хората наоколо, а с времето става спешен.',
+        'Натиснете „Виж“ – в списъка всеки сигнал има цена и срок за ремонт и бутон „Реши“.',
+        'Ако сигналите от един вид се повтарят на едно място, там липсва услуга – постройте я наблизо.',
+      ],
     };
   // следващият етап от плана за развитие
   const ps = planState(city);
@@ -570,6 +615,7 @@ function advice(): Advice | null {
       icon: g.icon,
       text: `Етап ${ps.next + 1}/${ps.total} – ${g.title}: ${g.why}`,
       action: goalButton(g, city) ? { label: goalButton(g, city)!, run: () => runGoal(g) } : undefined,
+      steps: g.steps?.(city),
     };
   }
   return { icon: '✨', text: 'Всички етапи са изпълнени – градът е голям и печеливш. Разширете го с нова земя или нов град.' };
@@ -580,14 +626,43 @@ function Advisor() {
   useStore((s) => s.issues);
   useStore((s) => s.cities);
   const [hidden, setHidden] = useState(false);
+  const [brief, setBrief] = useState(() => {
+    try {
+      return localStorage.getItem('gce.advisor.brief') === '1';
+    } catch {
+      return false;
+    }
+  });
   const a = advice();
   if (!a || hidden) return null;
+  const toggleBrief = () => {
+    setBrief(!brief);
+    try {
+      localStorage.setItem('gce.advisor.brief', brief ? '0' : '1');
+    } catch {
+      /* без значение */
+    }
+  };
   return (
     <div className="advisor glass" role="status">
       <span className="adv-icon">{a.icon}</span>
       <span className="adv-text">
         <em>Следваща стъпка</em>
         {a.text}
+        {a.steps && a.steps.length > 0 && (
+          <>
+            {!brief && (
+              <ol className="adv-steps">
+                {a.steps.map((x, i) => (
+                  <li key={i}>{x}</li>
+                ))}
+              </ol>
+            )}
+            <button className="link small adv-more" onClick={toggleBrief}>
+              {brief ? '▸ Как точно да го направя' : '▾ Скрий подробностите'}
+            </button>
+          </>
+        )}
       </span>
       {a.action && (
         <button className="btn primary small" onClick={a.action.run}>

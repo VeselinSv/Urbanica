@@ -78,17 +78,21 @@ describe('Държава (генератор v2)', () => {
     expect((w as unknown as { settlements?: unknown }).settlements).toBeUndefined();
     let land = 0;
     let buildable = 0;
+    let underRiver = 0;
     const perRegion = new Map<number, number>();
     for (let y = 0; y < N; y += 2)
       for (let x = 0; x < N; x += 2) {
         const t = w.tileAt(x, y);
         if (isWater(t.terrain) || !w.inCountry(x, y)) continue;
         land++;
-        if (w.buildable(x, y)) buildable++;
+        // под нарисуваната река (бреговете ѝ) не се строят сгради – само път като мост
+        if (w.riverOver(x, y)) underRiver++;
+        else if (w.buildable(x, y)) buildable++;
         expect(t.region).toBeGreaterThanOrEqual(0);
         perRegion.set(t.region, (perRegion.get(t.region) ?? 0) + 1);
       }
-    expect(buildable).toBe(land);
+    expect(buildable + underRiver).toBe(land);
+    expect(underRiver / land).toBeLessThan(0.05);
     // всяка област има реална територия
     for (const r of w.regions) expect(perRegion.get(r.id) ?? 0).toBeGreaterThan(5);
   });

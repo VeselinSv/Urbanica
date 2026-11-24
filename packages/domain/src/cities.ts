@@ -14,7 +14,6 @@ import {
   type TileState,
   ZONES,
 } from '@gce/shared';
-import { isWater } from '@gce/world-generation';
 import { Prisma, isUniqueViolation, withTx, type PrismaClient, type Tx } from '@gce/database';
 import { DomainError, bad, conflict, forbidden, notFound } from './errors';
 import { SYS, acc, ensureAccount, transfer } from './ledger';
@@ -219,7 +218,6 @@ export async function build(prisma: PrismaClient, userId: string, cityId: string
           continue;
         }
         const cur = tiles[k];
-        const terrain = gen.tileAt(x, y).terrain;
         switch (input.action) {
           case 'road': {
             const cls = input.roadClass ?? 'street';
@@ -334,8 +332,8 @@ export async function build(prisma: PrismaClient, userId: string, cityId: string
               continue;
             }
             const c = buildCost(gen, x, y, BALANCE.construction.pathCost);
-            if (!Number.isFinite(c) || isWater(terrain)) {
-              reasons.add('Не може да се прави алея върху вода');
+            if (!Number.isFinite(c) || gen.onWater(x, y)) {
+              reasons.add('Не може да се прави алея върху вода или река');
               continue;
             }
             tiles[k] = { t: 'path' };
@@ -344,8 +342,8 @@ export async function build(prisma: PrismaClient, userId: string, cityId: string
             break;
           }
           case 'zone': {
-            if (isWater(terrain)) {
-              reasons.add('Не може да се зонира вода');
+            if (gen.onWater(x, y)) {
+              reasons.add('Не може да се строи върху реката или водата – само път (мост) минава през нея');
               continue;
             }
             if (cur && !(cur.t === 'zone' && cur.lvl === 0)) {
@@ -370,6 +368,10 @@ export async function build(prisma: PrismaClient, userId: string, cityId: string
               reasons.add('Плочката е заета');
               continue;
             }
+            if (!Number.isFinite(gen.roadCostMult(x, y)) || gen.onWater(x, y)) {
+              reasons.add('Не може да се строи върху реката или водата – само път (мост) минава през нея');
+              continue;
+            }
             if (!roadNext(tiles, x, y)) {
               reasons.add('Обществените сгради се строят точно до път – първо постройте път до плочката');
               continue;
@@ -377,10 +379,6 @@ export async function build(prisma: PrismaClient, userId: string, cityId: string
             const def = SERVICES[input.service];
             // фиксирана цена – точно колкото пише в менюто (теренът оскъпява само пътищата: мостове, тунели)
             const c = def.cost;
-            if (!Number.isFinite(gen.roadCostMult(x, y)) || isWater(terrain)) {
-              reasons.add('Не може да се строи върху вода');
-              continue;
-            }
             tiles[k] = { t: 'service', s: input.service, cond: 1 };
             cost += c;
             applied++;

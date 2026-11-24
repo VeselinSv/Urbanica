@@ -112,6 +112,7 @@ export async function buildFacility(
         if (!territoryKeys(city.parcels).includes(k)) throw bad('Плочката не е в територията на града');
         const tiles = { ...(city.tiles as unknown as TileMap) };
         if (tiles[k]) throw bad('Плочката е заета');
+        if (gen.onWater(input.x, input.y)) throw bad('Не може да се строи върху реката или водата – изберете суша до нея');
         const placement = gen.satisfiesPlacement(def.placement, input.x, input.y);
         if (!placement.ok) throw bad(placement.reason ?? 'Неподходящо място');
         if (!roadNext(tiles, input.x, input.y)) throw bad('Предприятието трябва да е точно до път (за ток, вода и работници) – първо постройте път до плочката');

@@ -751,43 +751,7 @@ function paintSeasonGround(g: Ctx, gen: WorldGenerator, lookup: TileLookup, x0: 
 export function isBridge(gen: WorldGenerator, x: number, y: number) {
   const t = gen.terrain[y * gen.size + x] as Terrain;
   if (t === Terrain.River || t === Terrain.Water) return true;
-  return riverDrawnOver(gen, x, y);
-}
-
-/**
- * Минава ли нарисуваната река през плочката. Реките се рисуват като плавни криви с ширина (w/2 + ~0.3 вода) и
- * минават и през плочки, които по терен са „суша“ – пътят там също трябва да е мост, иначе изглежда, че колите
- * минават през водата. Кеш по плочка.
- */
-const riverCache = new WeakMap<WorldGenerator, Map<number, boolean>>();
-function riverDrawnOver(gen: WorldGenerator, x: number, y: number): boolean {
-  let cache = riverCache.get(gen);
-  if (!cache) riverCache.set(gen, (cache = new Map()));
-  const key = y * gen.size + x;
-  const hit = cache.get(key);
-  if (hit !== undefined) return hit;
-  const cx = x + 0.5;
-  const cy = y + 0.5;
-  let over = false;
-  for (const r of gen.rivers) {
-    const p = r.points;
-    for (let i = 0; i < p.length - 1 && !over; i++) {
-      const a = p[i];
-      const b = p[i + 1];
-      if (Math.min(a.x, b.x) > cx + 3 || Math.max(a.x, b.x) < cx - 3 || Math.min(a.y, b.y) > cy + 3 || Math.max(a.y, b.y) < cy - 3) continue;
-      const wa = gen.country.water[Math.floor(a.y) * gen.size + Math.floor(a.x)];
-      if (wa === WATER_OCEAN) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const L2 = dx * dx + dy * dy || 1;
-      const t = Math.max(0, Math.min(1, ((cx - a.x) * dx + (cy - a.y) * dy) / L2));
-      const d = Math.hypot(cx - (a.x + dx * t), cy - (a.y + dy * t));
-      if (d <= (a.w + b.w) / 4 + 0.42) over = true;
-    }
-    if (over) break;
-  }
-  cache.set(key, over);
-  return over;
+  return gen.riverOver(x, y);
 }
 
 /** Височина на платното на моста над водата (px при мащаб 1). */
@@ -1121,6 +1085,18 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
   const N = gen.size;
   const c = gen.country;
   const mid = opts.detail < 2;
+  // Сградите (с подвижните обекти) са в отделен слой над терена, сортиран по дълбочина. Дърво пред сграда
+  // трябва да я закрива – затова дърветата в града и горските дървета до сгради отиват в същия слой.
+  const nearBuilding = (x: number, y: number) => {
+    if (!opts.actors) return false;
+    for (let dy = -3; dy <= 1; dy++)
+      for (let dx = -3; dx <= 1; dx++) {
+        const n = lookup(x + dx, y + dy);
+        if (n && n.t !== 'road') return true;
+      }
+    return false;
+  };
+  const treeSink = (x: number, y: number): { push: (o: CityActor) => void } => (nearBuilding(x, y) ? sink : out);
   for (let y = y0; y < y0 + CHUNK; y++)
     for (let x = x0; x < x0 + CHUNK; x++) {
       if (x < 0 || y < 0 || x >= N || y >= N) continue;
@@ -1208,7 +1184,7 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
               const along = 0.25 + h01(x, y, 20) * 0.5;
               const tx = horiz ? x + along : x + 0.5 + off;
               const ty = horiz ? y + 0.5 + off : y + along;
-              out.push({
+              sink.push({
                 d: tx + ty,
                 wx: tx,
                 wy: ty,
@@ -1221,7 +1197,7 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
             const horiz = lookup(x + 1, y)?.t === 'road' && lookup(x - 1, y)?.t === 'road';
             const vert = lookup(x, y + 1)?.t === 'road' && lookup(x, y - 1)?.t === 'road';
             if (horiz !== vert)
-              out.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'tree', t: h01(x, y, 14) < 0.5 ? 'oak' : 'poplar', v: v % 7, size: 1.15 } });
+              sink.push({ d: x + y + 1, wx: x + 0.5, wy: y + 0.5, key: { k: 'tree', t: h01(x, y, 14) < 0.5 ? 'oak' : 'poplar', v: v % 7, size: 1.15 } });
           }
         }
         continue;
@@ -1257,11 +1233,12 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
             break;
           }
       if (riverside && count < 2 && h01(x, y, 30) < 0.6) count = Math.max(count, 1);
+      const trees = count > 0 ? treeSink(x, y) : out;
       for (let i = 0; i < count; i++) {
         const fx = (i % 2) * 0.5 + 0.08 + h01(x, y, i, 31) * 0.36;
         const fy = (Math.floor(i / 2) % 2) * 0.5 + 0.08 + h01(x, y, i, 32) * 0.36 + (count === 1 ? 0.2 : 0);
         const s = h01(x, y, i, 33);
-        out.push({
+        trees.push({
           d: x + fx + y + fy,
           wx: x + fx,
           wy: y + fy,

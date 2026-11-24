@@ -361,7 +361,10 @@ export function MapView() {
       return;
     }
     const tiles = t.kind === 'select' ? [b] : previewTiles(t, a, b);
-    const valid = t.kind === 'select' || tiles.every((x) => inTerritory(x.x, x.y));
+    // сгради не се строят върху реката (само път – като мост); курсорът е червен там
+    const gen = world ? getWorld(world.seed) : null;
+    const building = t.kind === 'zone' || t.kind === 'service' || t.kind === 'facility';
+    const valid = t.kind === 'select' || tiles.every((x) => inTerritory(x.x, x.y) && !(building && gen?.onWater(x.x, x.y)));
     rr.drawCursor(tiles, toolColor(t), valid);
     // при поставяне на услуга – докъде ще стига (полиция, училище, спирка…)
     if (t.kind === 'service') {
