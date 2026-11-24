@@ -166,3 +166,57 @@ export function HowTo({ title = "Как работи?", steps }: { title?: strin
     </details>
   );
 }
+
+export interface GuideStep {
+  label: string;
+  done: boolean;
+  /** какво точно да направите и защо (показва се за текущата стъпка) */
+  hint: string;
+  action?: { label: string; run: () => void };
+}
+
+/**
+ * Стъпки за една функционалност (като плана на града): докъде сте стигнали, какво е следващото и бутон за него.
+ * Когато всички стъпки са изпълнени, се показва кратко „✓ готово“ и съвет как да продължите.
+ */
+export function FeatureGuide({ title, steps, done }: { title: string; steps: GuideStep[]; done?: string }) {
+  const next = steps.findIndex((s) => !s.done);
+  const finished = steps.filter((s) => s.done).length;
+  return (
+    <div className="feature-guide">
+      <div className="fg-head">
+        <b>{title}</b>
+        <span className="small muted">
+          {finished}/{steps.length}
+        </span>
+      </div>
+      <div className="fg-bar">
+        <i style={{ width: `${(finished / steps.length) * 100}%` }} />
+      </div>
+      {next >= 0 ? (
+        <div className="fg-next">
+          <span className="small">
+            <b>
+              Стъпка {next + 1}: {steps[next].label}
+            </b>{' '}
+            – {steps[next].hint}
+          </span>
+          {steps[next].action && (
+            <button className="btn primary small" onClick={steps[next].action!.run}>
+              {steps[next].action!.label}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="small good">✓ {done ?? 'Всички стъпки са изпълнени.'}</div>
+      )}
+      <ol className="fg-steps small">
+        {steps.map((s, i) => (
+          <li key={i} className={s.done ? 'done' : i === next ? 'cur' : ''}>
+            {s.done ? '✓' : i === next ? '▶' : '○'} {s.label}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}

@@ -1280,7 +1280,7 @@ function mergedHome(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Sprite
   // размер на групата в плочки (по u = x и v = y), центърът е в 0,0
   const su = span === 'y' ? 0.5 : 1;
   const sv = span === 'x' ? 0.5 : 1;
-  const H = lvl === 1 ? 30 : lvl === 2 ? (span === 'xy' ? 40 : 46) : 150 + t(1) * 70;
+  const H = lvl === 1 ? 30 : lvl === 2 ? (span === 'xy' ? 40 : 46) : 66 + t(1) * 36;
   return makeSprite(
     r,
     H + 60,
@@ -1400,38 +1400,23 @@ function mergedHome(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Sprite
         roof(g, P, b, hh, t(10) < 0.6 ? 'flat' : 'hip', t(10) < 0.6 ? dim(0x8d8a86) : rc, wall, 12, v);
         return;
       }
-      // ниво 3
-      const hh = Math.round(H / FLOOR) * FLOOR;
-      if (span === 'xy') {
-        // висока кула на широк подиум с градина на покрива на подиума
-        const pod: [number, number, number, number] = [-0.85, -0.85, 0.85, 0.85];
-        const b: [number, number, number, number] = [-0.42, -0.42, 0.42, 0.42];
-        shadow(g, P, b[0], b[1], b[2], b[3], hh);
-        box(g, P, pod[0], pod[1], pod[2], pod[3], 0, FLOOR * 2, { wall: dim(0xbdb6aa) });
-        faceQuad(g, P, face, pod, 0.08, 0.92, 2, FLOOR * 2 - 2, rgb(0x5d7484, face === 'left' ? 0.95 : 0.75));
-        poly(
-          g,
-          [
-            P(pod[0] + 0.05, pod[1] + 0.05, FLOOR * 2),
-            P(pod[2] - 0.05, pod[1] + 0.05, FLOOR * 2),
-            P(pod[2] - 0.05, pod[3] - 0.05, FLOOR * 2),
-            P(pod[0] + 0.05, pod[3] - 0.05, FLOOR * 2),
-          ],
-          rgb(grass(0x6f9f45)),
-        );
-        box(g, P, b[0], b[1], b[2], b[3], FLOOR * 2, hh, { wall: dim(pick(MODERN, t(11))) });
-        windows(g, P, r, b, FLOOR * 2, hh, { glass: pick(GLASS, t(12)), band: true, seed: v });
-        roof(g, P, b, hh, 'flat', dim(0x9a9792), wall, 0, v);
-        box(g, P, b[0] + 0.12, b[1] + 0.12, b[2] - 0.12, b[3] - 0.12, hh, hh + 8, { wall: 0xdfe3e6 });
-        return;
+      // ниво 3: елегантен жилищен комплекс (не панелен блок) – умерена височина, за да не скрива града зад себе си;
+      // само изискани материали (мазилка, пясъчник, тухли, синьо стъкло, дърво, травертин) и раздвижени форми
+      lawnAround(g, P, span, dim);
+      variedBuilding(KIT, g, P, r, {
+        b: spanBox(span, span === 'xy' ? 0.2 : 0.14),
+        H,
+        seed: v * 29 + 7,
+        face,
+        dim,
+        material: ELEGANT_MATERIALS[Math.floor(t(12) * ELEGANT_MATERIALS.length)],
+        shape: ELEGANT_SHAPES[Math.floor(t(13) * ELEGANT_SHAPES.length)],
+        plaza: false,
+      });
+      {
+        const [, , u1, v1] = spanBox(span, 0.02);
+        KIT.tree(g, P, r, u1 - 0.08, v1 - 0.08, v + 3, 0.85);
       }
-      // блок-пластина по дължината на двете плочки
-      const b: [number, number, number, number] = span === 'x' ? [-0.85, -0.3, 0.85, 0.3] : [-0.3, -0.85, 0.3, 0.85];
-      shadow(g, P, b[0], b[1], b[2], b[3], hh);
-      box(g, P, b[0] - 0.04, b[1] - 0.04, b[2] + 0.04, b[3] + 0.04, 0, FLOOR, { wall: dim(0xbdb6aa) });
-      box(g, P, b[0], b[1], b[2], b[3], FLOOR, hh, { wall });
-      windows(g, P, r, b, FLOOR, hh, { glass: 0x6c8597, density: 6, w: 0.5, seed: v, lit: 0.14, balcony: 0.7 });
-      roof(g, P, b, hh, 'flat', dim(0x9a9792), wall, 0, v);
     },
     true,
   );
@@ -1444,9 +1429,9 @@ function zoneBuilding(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Spri
   const dim = (c: number) => (ab ? mixc(c, 0x6b6660, 0.55) : c);
   const H =
     z === 'R'
-      ? [16, 34, 60 + t(1) * 90][lvl - 1]
+      ? [16, 34, 55 + t(1) * 40][lvl - 1]
       : z === 'O'
-        ? [26, 70, 120 + t(1) * 120][lvl - 1]
+        ? [26, 62, 95 + t(1) * 60][lvl - 1]
         : z === 'C'
           ? [14, 30, 52 + t(1) * 40][lvl - 1]
           : z === 'H'
@@ -1536,7 +1521,15 @@ function zoneBuilding(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Spri
         return;
       }
       // висока жилищна сграда: една от 10-те форми × 10-те материала
-      variedBuilding(KIT, g, P, r, { b: [-0.36, -0.36, 0.36, 0.36], H, seed: v * 13 + 1, face, dim });
+      variedBuilding(KIT, g, P, r, {
+        b: [-0.36, -0.36, 0.36, 0.36],
+        H,
+        seed: v * 13 + 1,
+        face,
+        dim,
+        material: ELEGANT_MATERIALS[Math.floor(t(14) * ELEGANT_MATERIALS.length)],
+        shape: ELEGANT_SHAPES[Math.floor(t(15) * ELEGANT_SHAPES.length)],
+      });
       void other;
       return;
     }
@@ -2379,6 +2372,16 @@ const KIT: Kit = {
   },
 };
 
+/** Изискани материали за жилищата (без бетон, метал и тъмно стъкло) и раздвижени форми (без проста кутия). */
+const ELEGANT_MATERIALS = [0, 1, 2, 3, 6, 7, 8];
+const ELEGANT_SHAPES = [1, 2, 3, 4, 5, 6, 7, 9];
+
+/** Двор с трева и дървета около жилищния комплекс. */
+function lawnAround(g: Ctx, P: P3, span: Span, dim: (c: number) => number) {
+  const [u0, v0, u1, v1] = spanBox(span, 0.02);
+  poly(g, [P(u0, v0, 0), P(u1, v0, 0), P(u1, v1, 0), P(u0, v1, 0)], rgb(grass(dim(0x79aa52))));
+}
+
 /** Отпечатък на група плочки (2 по X, 2 по Y или 2×2) – центърът е в 0,0. */
 function spanBox(span: Span, pad = 0.1): [number, number, number, number] {
   const su = span === 'y' ? 0.5 : 1;
@@ -2401,7 +2404,7 @@ function mergedBlock(key: Extract<BuildingKey, { k: 'zone' }>, r: number): Sprit
   const xy = span === 'xy';
   const H =
     z === 'O'
-      ? [34, 80, 150 + t(1) * 140][lvl - 1] * (xy ? 1.25 : 1.05)
+      ? [34, 70, 110 + t(1) * 60][lvl - 1] * (xy ? 1.12 : 1.0)
       : z === 'C'
         ? [16, 22, 40 + t(1) * 90][lvl - 1]
         : z === 'R'

@@ -264,8 +264,14 @@ export class IsoRenderer {
         const last = pts[pts.length - 1];
         const d = (p: W, q: W) => Math.abs(p.x - q.x) + Math.abs(p.y - q.y);
         const [ea, eb] = d(first, ends[0].exit) + d(last, ends[1].exit) <= d(first, ends[1].exit) + d(last, ends[0].exit) ? [first, last] : [last, first];
-        route(ea, ends[0].exit, 'avenue');
-        route(eb, ends[1].exit, 'avenue');
+        // краищата се свързват с най-близкия градски път (направо, без обиколки)
+        // Г-образно – с един завой (Z-трасето дава S-образни завои при къси връзки)
+        const ell = (p: W, q: W) => {
+          seg(p, { x: q.x, y: p.y }, 'avenue');
+          seg({ x: q.x, y: p.y }, q, 'avenue');
+        };
+        ell(ea, this.nearestCityRoad(ea) ?? ends[0].exit);
+        ell(eb, this.nearestCityRoad(eb) ?? ends[1].exit);
         continue;
       }
       route(ends[0].gate, ends[1].gate, 'highway');
@@ -284,6 +290,22 @@ export class IsoRenderer {
       this.invalidate(changed);
       this.refreshLife();
     }
+  }
+
+  /** Най-близкият градски път (не от магистралите) до точка – до 30 плочки. */
+  private nearestCityRoad(p: { x: number; y: number }): { x: number; y: number } | null {
+    let best: { x: number; y: number } | null = null;
+    let bd = 31;
+    for (const [k, t] of this.cityTiles) {
+      if (t.t !== 'road' || this.linkOwned.has(k)) continue;
+      const [x, y] = parseKey(k);
+      const d = Math.abs(x - p.x) + Math.abs(y - p.y);
+      if (d < bd) {
+        bd = d;
+        best = { x, y };
+      }
+    }
+    return best;
   }
 
   /** Добавя пътищата на магистралите към плочките за рисуване (без да покрива градски плочки). */

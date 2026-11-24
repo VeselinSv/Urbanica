@@ -750,7 +750,44 @@ function paintSeasonGround(g: Ctx, gen: WorldGenerator, lookup: TileLookup, x0: 
 /** Мост ли е пътната плочка (над река или езеро). */
 export function isBridge(gen: WorldGenerator, x: number, y: number) {
   const t = gen.terrain[y * gen.size + x] as Terrain;
-  return t === Terrain.River || t === Terrain.Water;
+  if (t === Terrain.River || t === Terrain.Water) return true;
+  return riverDrawnOver(gen, x, y);
+}
+
+/**
+ * Минава ли нарисуваната река през плочката. Реките се рисуват като плавни криви с ширина (w/2 + ~0.3 вода) и
+ * минават и през плочки, които по терен са „суша“ – пътят там също трябва да е мост, иначе изглежда, че колите
+ * минават през водата. Кеш по плочка.
+ */
+const riverCache = new WeakMap<WorldGenerator, Map<number, boolean>>();
+function riverDrawnOver(gen: WorldGenerator, x: number, y: number): boolean {
+  let cache = riverCache.get(gen);
+  if (!cache) riverCache.set(gen, (cache = new Map()));
+  const key = y * gen.size + x;
+  const hit = cache.get(key);
+  if (hit !== undefined) return hit;
+  const cx = x + 0.5;
+  const cy = y + 0.5;
+  let over = false;
+  for (const r of gen.rivers) {
+    const p = r.points;
+    for (let i = 0; i < p.length - 1 && !over; i++) {
+      const a = p[i];
+      const b = p[i + 1];
+      if (Math.min(a.x, b.x) > cx + 3 || Math.max(a.x, b.x) < cx - 3 || Math.min(a.y, b.y) > cy + 3 || Math.max(a.y, b.y) < cy - 3) continue;
+      const wa = gen.country.water[Math.floor(a.y) * gen.size + Math.floor(a.x)];
+      if (wa === WATER_OCEAN) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const L2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((cx - a.x) * dx + (cy - a.y) * dy) / L2));
+      const d = Math.hypot(cx - (a.x + dx * t), cy - (a.y + dy * t));
+      if (d <= (a.w + b.w) / 4 + 0.42) over = true;
+    }
+    if (over) break;
+  }
+  cache.set(key, over);
+  return over;
 }
 
 /** Височина на платното на моста над водата (px при мащаб 1). */
@@ -890,7 +927,7 @@ function paintBridgesTunnels(g: Ctx, gen: WorldGenerator, roads: RoadTile[], loo
       g.beginPath();
       g.rect(r.x - 0.02, r.y - 0.02, 1.04, 1.04);
       g.clip();
-      g.globalAlpha = 0.5;
+      g.globalAlpha = 0.62;
       paintTerrain(g, gen, r.x, r.y, 1, detail >= 2 ? 4 : 2, season);
       g.restore();
       // ребра на тръбата и лампите по тавана
@@ -1156,10 +1193,12 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
             out.push({ d: sx + sy, wx: sx, wy: sy, draw: (g, px, py) => busShelter(g, px, py, opts.res, horiz) });
           }
           // улични лампи по тротоарите (на правите участъци, през плочка); светофарите са живи – traffic.ts
-          const lamp = !mid ? lampAt(x, y, t, lookup) : null;
+          // (не в тунел и не на мост – там има собствено осветление)
+          const covered = tunnelKind(gen, lookup, x, y) === 'inside' || !!bi;
+          const lamp = !mid && !covered ? lampAt(x, y, t, lookup) : null;
           if (lamp) out.push({ d: lamp.wx + lamp.wy, wx: lamp.wx, wy: lamp.wy, draw: (g, px, py) => streetLamp(g, px, py, opts.res, lamp.arm) });
           // дървета по тротоарите на кварталните улици (през една плочка, на другата страна от лампата)
-          if (!mid && !t.j && hasSidewalk(t) && (t.c ?? 'street') === 'street' && h01(x, y, 18) < 0.55) {
+          if (!mid && !covered && !t.j && hasSidewalk(t) && (t.c ?? 'street') === 'street' && h01(x, y, 18) < 0.55) {
             const horiz = lookup(x + 1, y)?.t === 'road' && lookup(x - 1, y)?.t === 'road';
             const vert = lookup(x, y + 1)?.t === 'road' && lookup(x, y - 1)?.t === 'road';
             if (horiz !== vert) {
@@ -1193,8 +1232,15 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
       const h = c.height[k];
       let count = 0;
       const clearing = smoothNoise(x, y, 6, 57);
+      // просека покрай магистралите (и между градовете): по една плочка от двете страни без дървета
+      let byHighway = false;
+      for (let dy = -1; dy <= 1 && !byHighway; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const n = lookup(x + dx, y + dy);
+          if (n?.t === 'road' && (n.c === 'highway' || n.c === 'avenue')) byHighway = true;
+        }
       // територията на града е разчистена – там не никнат дървета (нито след събаряне)
-      if (opts.cleared?.(x, y)) count = 0;
+      if (opts.cleared?.(x, y) || byHighway) count = 0;
       else if (f > 0.5) count = clearing < 0.24 ? (h01(x, y, 28) < 0.25 ? 1 : 0) : clearing < 0.32 ? (mid ? 1 : 2) : mid ? 2 : 4;
       else if (f > 0.3) count = h01(x, y, 23) < f * 1.6 ? (h01(x, y, 26) < 0.5 ? 2 : 1) : 0;
       else if (h > MOUNTAINS) count = 0;

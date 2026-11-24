@@ -16,7 +16,7 @@ import {
 import { del, patch, post } from '../../api';
 import { bumpData, errorToast, refreshAll, refreshCompanies, setState, toast, useStore } from '../../store';
 import { KIND_LABELS, RATING_COLOR, money, num, pct, toCents } from '../../format';
-import { AsyncButton, Field, Meter, Section, Stat, Table, useApi } from '../common';
+import { AsyncButton, FeatureGuide, Field, Meter, Section, Stat, Table, useApi } from '../common';
 
 interface CompanyFull {
   id: string;
@@ -49,6 +49,7 @@ interface CompanyFull {
   stats?: { tick: number; revenue: number; costs: number; profit: number; cash: number }[];
   publicReport: { revenue: number; costs: number; profit: number; days: number };
   policy?: CompanyPolicy;
+  orders?: { side: string; instrument: string }[];
   advice?: { level: 1 | 2 | 3; text: string }[];
 }
 
@@ -286,6 +287,44 @@ export function CompanyPanel() {
   return (
     <div>
       <h2>Компании и производство</h2>
+      <FeatureGuide
+        title="Компания – стъпка по стъпка"
+        done="Компанията работи и печели. Растете: още съоръжения, преработка, модернизация, изследвания."
+        steps={[
+          {
+            label: 'Основете компания',
+            done: companies.some((x) => x.roles.length > 0),
+            hint: 'дайте име и капитал от личния портфейл (долу в този панел). С тези пари строите съоръжения.',
+          },
+          {
+            label: 'Постройте съоръжение',
+            done: (d?.facilitiesDetail ?? []).length > 0,
+            hint: 'изберете „Индустрия“ вляво и кликнете на плочка точно до път: ферма на плодородна земя, мина на находище, дъскорезница в гора.',
+            action: { label: '🏭 Индустрия', run: () => setState({ tool: { kind: 'facility', facility: 'farm' } }) },
+          },
+          {
+            label: 'Персонал и ток',
+            done: (d?.facilitiesDetail ?? []).some((f) => f.staffing > 0.3 && f.power > 0.3),
+            hint: 'съоръжението взема работници и ток от града – нужни са жилища (безработни) и централа. Изчакайте няколко дни.',
+          },
+          {
+            label: 'Продавайте продукцията',
+            done: !!d?.policy?.autoSell || (d?.orders ?? []).some((o) => o.side === 'SELL'),
+            hint: 'включете „Автоматично продавай продукцията“ (до 92% от цената купува и световният пазар) или продайте ръчно в „Пазар“.',
+          },
+          {
+            label: 'Първа печалба',
+            done: (d?.stats ?? []).slice(-7).reduce((a, x) => a + x.profit, 0) > 0,
+            hint: 'следете „Как върви компанията“ – там пише какво пречи (персонал, ток, суровини, склад, цена).',
+          },
+          {
+            label: 'Второ съоръжение или преработка',
+            done: (d?.facilitiesDetail ?? []).length >= 2,
+            hint: 'преработката на собствената ви суровина (зърно → храна, руда + въглища → стомана) носи повече.',
+            action: { label: '🏭 Индустрия', run: () => setState({ tool: { kind: 'facility', facility: 'food_plant' } }) },
+          },
+        ]}
+      />
       {companies.length > 0 && (
         <Field label="Активна компания">
           <select value={activeId ?? ''} onChange={(e) => setState({ activeCompanyId: e.target.value })}>
@@ -447,6 +486,16 @@ export function MarketPanel() {
   return (
     <div>
       <h2>Пазар и търговия</h2>
+      <FeatureGuide
+        title="Търговия – стъпка по стъпка"
+        done="Търгувате. Следете цените (графиката) и неудовлетвореното търсене – там е печалбата."
+        steps={[
+          { label: 'Имате компания', done: !!activeCompanyId, hint: 'на борсата търгуват компании – основете една в панела „Бизнес“.', action: { label: 'Бизнес', run: () => setState({ panel: 'companies' }) } },
+          { label: 'Стока в склада', done: (myCo.data?.inventory ?? []).some((i) => i.quantity + i.reserved > 0) || (myCo.data?.stats ?? []).some((x) => x.revenue > 0), hint: 'произведете стока със съоръжение или купете суровина тук („Купувам“).' },
+          { label: 'Пуснете поръчка', done: (orders.data ?? []).length > 0 || !!myCo.data?.policy?.autoSell, hint: 'изберете стока, „Продавам“, количество и цена – или включете автоматичните продажби на компанията.' },
+          { label: 'Първа продажба', done: (myCo.data?.stats ?? []).some((x) => x.revenue > 0), hint: 'изчакайте няколко дни – жителите и световният пазар купуват всеки ден от най-евтините поръчки.' },
+        ]}
+      />
       <details className="callout help">
         <summary>
           <b>Как се търгува?</b> (кликнете)
@@ -706,6 +755,16 @@ export function ContractsPanel() {
   return (
     <div>
       <h2>Договори за доставка</h2>
+      <FeatureGuide
+        title="Договор – стъпка по стъпка"
+        done="Имате работещ договор. Доставките стават автоматично – пазете стока в склада, за да няма неустойки."
+        steps={[
+          { label: 'Имате компания', done: !!activeCompanyId, hint: 'договорите се сключват между компании.', action: { label: 'Бизнес', run: () => setState({ panel: 'companies' }) } },
+          { label: 'Има с кого', done: others.length > 0, hint: 'нужна е поне още една компания (на друг играч или ваша втора).' },
+          { label: 'Изпратете оферта', done: (list.data ?? []).length > 0, hint: 'попълнете ролята, насрещната компания, стока, количество, цена и неустойка долу и изпратете.' },
+          { label: 'Активен договор', done: (list.data ?? []).some((c) => c.status === 'ACTIVE' || c.status === 'COMPLETED'), hint: 'другата страна трябва да приеме офертата (бутон „Приеми“ в нейния списък).' },
+        ]}
+      />
       <p className="small muted">
         Договорът е споразумение между две компании: продавачът доставя всеки N дни определено количество на фиксирана цена, а купувачът плаща при всяка
         доставка. Ако продавачът няма стоката в склада, плаща неустойка. Другата страна трябва да приеме офертата.
@@ -898,6 +957,16 @@ export function BankPanel() {
   return (
     <div>
       <h2>Банка и кредити</h2>
+      <FeatureGuide
+        title="Кредит – стъпка по стъпка"
+        done="Кредитът се изплаща на вноски на всеки 30 дни. Плащайте навреме – рейтингът и лихвата зависят от това."
+        steps={[
+          { label: 'Изберете кредитополучател', done: !!borrowerId, hint: 'кредит може да вземе компанията ви или градът (бюджетът).' },
+          { label: 'Вижте офертата', done: !!offer.data, hint: 'банката дава рейтинг (A–D), лихва и максимална сума според активите и дълговете.' },
+          { label: 'Изтеглете кредит', done: (loans.data ?? []).length > 0, hint: 'въведете сума (до максимума) и срок в дни – парите идват веднага.' },
+          { label: 'Плащайте навреме', done: (loans.data ?? []).length > 0 && (loans.data ?? []).every((l) => l.missed === 0), hint: 'вноската се взима сама; ако няма пари – пропуск, а след 3 – неизпълнение.' },
+        ]}
+      />
       <Field label="Кредитополучател">
         <select value={who} onChange={(e) => setWho(e.target.value as 'CITY' | 'COMPANY')}>
           <option value="COMPANY">Компания: {companies.find((c) => c.id === activeCompanyId)?.name ?? '—'}</option>

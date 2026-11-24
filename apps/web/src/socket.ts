@@ -20,6 +20,7 @@ export function onChat(fn: (m: ChatMsg) => void) {
 
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 let lastRefresh = 0;
+let marketTimer: ReturnType<typeof setTimeout> | null = null;
 /** Опресняване на града и панелите – най-много веднъж на ~2.5 s (денят е 1 секунда). */
 function scheduleRefresh() {
   if (refreshTimer) return;
@@ -80,7 +81,15 @@ export function connectSocket() {
     setState((s) => ({ unread: s.unread + 1 }));
     toast(n.message, n.kind === 'credit' || n.kind === 'finance' ? 'warning' : 'info');
   });
-  socket.on('market', () => bumpData());
+  // сделките на борсата са много (автоматични продажби, износ) – панелите се опресняват най-много веднъж на 3 s,
+  // иначе всяка сделка презарежда всичко и заявките стигат лимита на сървъра
+  socket.on('market', () => {
+    if (marketTimer) return;
+    marketTimer = setTimeout(() => {
+      marketTimer = null;
+      bumpData();
+    }, 3000);
+  });
   socket.on('chat', (m: ChatMsg) => {
     for (const l of chatListeners) l(m);
   });

@@ -4,7 +4,7 @@ import { get, post } from '../../api';
 import { bumpData, refreshAll, refreshCompanies, setState, toast, useStore } from '../../store';
 import { joinChannel, onChat, type ChatMsg } from '../../socket';
 import { RATING_COLOR, money, num, pct, toCents } from '../../format';
-import { AsyncButton, Field, HowTo, Section, Stat, Table, useApi } from '../common';
+import { AsyncButton, FeatureGuide, Field, HowTo, Section, Stat, Table, useApi } from '../common';
 
 interface CompanyPublic {
   id: string;
@@ -118,6 +118,23 @@ export function CorpPanel() {
   return (
     <div>
       <h2>Корпорации, акции и управление</h2>
+      <FeatureGuide
+        title="Акции – стъпка по стъпка"
+        done="Притежавате акции на друга компания. Гласувайте по предложенията и следете дивидентите."
+        steps={[
+          { label: 'Разгледайте компаниите', done: !!d, hint: 'изберете компания отгоре – виждате акционерите, стойността на акция и отчета ѝ.' },
+          {
+            label: 'Купете акции на друга компания',
+            done: companies.some((x) => x.roles.length === 0 && x.shares > 0),
+            hint: 'в „Търговия с акции“ изберете „Купувам“, брой и цена; парите се заделят, докато някой продаде.',
+          },
+          {
+            label: 'Гласувайте или предложете',
+            done: companies.some((x) => x.roles.includes('CEO') || x.roles.includes('BOARD')),
+            hint: 'като акционер/борд внасяте предложения (дивидент, емисия, назначаване) – приемат се с над 50% от гласовете.',
+          },
+        ]}
+      />
       <HowTo
         title="Как работят акциите и управлението?"
         steps={[
@@ -346,6 +363,21 @@ export function TechPanel() {
   return (
     <div>
       <h2>Иновации, патенти и лицензи</h2>
+      <FeatureGuide
+        title="Изследване – стъпка по стъпка"
+        done="Имате патент. Продавайте лицензи на други компании или изследвайте следващата технология."
+        steps={[
+          { label: 'Имате компания', done: mine.size > 0, hint: 'изследванията се правят от компания.', action: { label: 'Бизнес', run: () => setState({ panel: 'companies' }) } },
+          {
+            label: 'Университет в града',
+            done: !!city && Object.values(city.tiles as Record<string, { t: string; s?: string }>).some((t) => t.t === 'service' && t.s === 'university'),
+            hint: 'с университет в града на седалището изследванията вървят по-бързо (не е задължително).',
+            action: { label: '🎓 Университет', run: () => setState({ tool: { kind: 'service', service: 'university' } }) },
+          },
+          { label: 'Започнете изследване', done: (techs.data ?? []).some((t) => t.researchers > 0), hint: 'изберете технология по-долу – тя подобрява определен вид съоръжения.' },
+          { label: 'Патент', done: (techs.data ?? []).some((t) => t.patent && t.patent.ownerCompanyId && mine.has(t.patent.ownerCompanyId)), hint: 'след нужните дни изследването дава патент за 1 година.' },
+        ]}
+      />
       <HowTo
         title="Как работят изследванията?"
         steps={[
@@ -471,6 +503,19 @@ export function DiplomacyPanel() {
   return (
     <div>
       <h2>Икономическа дипломация</h2>
+      <FeatureGuide
+        title="Съюз – стъпка по стъпка"
+        done="Вие сте в съюз. Търгувайте без мита със съюзниците и строете предприятия в градовете им."
+        steps={[
+          { label: 'Създайте или влезте в съюз', done: !!d?.myAllianceId, hint: 'въведете име и описание долу и създайте съюз – или приемете покана.' },
+          {
+            label: 'Поканете играч',
+            done: !!d && (d.alliances.find((a) => a.id === d.myAllianceId)?.members.length ?? 0) > 1,
+            hint: 'изберете играч от списъка и изпратете покана – той я приема в своя панел.',
+          },
+          { label: 'Търгувайте без мита', done: !!d && (d.alliances.find((a) => a.id === d.myAllianceId)?.members.length ?? 0) > 1, hint: 'между членовете няма мита при внос; предприятията могат да се строят в градовете на съюзниците.' },
+        ]}
+      />
       <HowTo
         title="Как работят съюзите?"
         steps={[

@@ -747,7 +747,8 @@ export class Traffic {
     const geomSpeed = ROAD_GEOM[this.cls(car.tx, car.ty)].speed;
     const turning = car.din !== car.dout || !!car.seg.ring;
     const jam = Math.max(0, (this.load.get(tileKey(car.tx, car.ty)) ?? 0) - 0.8);
-    const vDes = (car.vmax * geomSpeed * (turning ? 0.55 : 1)) / (1 + jam * 0.7);
+    // задръстването забавя, но не спира колите (иначе изглежда, че не се движат)
+    const vDes = (car.vmax * geomSpeed * (turning ? 0.55 : 1)) / (1 + Math.min(1.4, jam) * 0.7);
     let gap = Infinity;
     let leaderV = 0;
 
@@ -840,7 +841,7 @@ export class Traffic {
       car.stuck = Math.max(0, car.stuck - dt * 2);
     }
     // забравените коли (задръстване без изход) тихо „паркират“
-    if (car.stuck > 14 && car.fade >= 0) car.fade = -1;
+    if (car.stuck > 6 && car.fade >= 0) car.fade = -1;
 
     car.t += (car.v * dt) / car.seg.len;
     while (car.t >= 1) {
