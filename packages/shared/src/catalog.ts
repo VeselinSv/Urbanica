@@ -765,22 +765,36 @@ export const UPGRADE_REQUIREMENT_LABELS: Record<UpgradeRequirement, string> = {
 };
 
 const BASE_UTIL: UpgradeRequirement[] = ['road', 'power', 'water'];
-/** Изисквания за ниво 2 и ниво 3 по зона (без общите: заетост, търсене, стойност на земята). */
+/**
+ * Изисквания за ниво 2 и ниво 3 по зона (без общите: заетост, търсене, стойност на земята) – като в истински град:
+ *  - жилища: училище, болница, полиция, пожарна, парк, транспорт, чист въздух (най-взискателни);
+ *  - търговия: полиция, пожарна, транспорт за клиентите, паркинг, парк (без училище и болница);
+ *  - индустрия и логистика: пожарна преди всичко, после полиция, транспорт за работниците (индустрията – и болница);
+ *    не искат паркове и училища наблизо;
+ *  - офиси: полиция, пожарна, транспорт, паркове и университет (висше образование);
+ *  - високи технологии: университет, транспорт, чист въздух.
+ */
 export const UPGRADE_REQUIREMENTS: Record<ZoneType, [UpgradeRequirement[], UpgradeRequirement[]]> = {
   R: [
     [...BASE_UTIL, 'sidewalk', 'school'],
-    [...BASE_UTIL, 'sidewalk', 'school', 'clinic', 'police_station', 'fire_station', 'park', 'sewage', 'waste'],
+    [...BASE_UTIL, 'sidewalk', 'school', 'clinic', 'police_station', 'fire_station', 'park', 'bus_depot', 'sewage', 'waste', 'clean_air'],
   ],
   C: [
     [...BASE_UTIL, 'sidewalk', 'police_station'],
-    [...BASE_UTIL, 'sidewalk', 'police_station', 'fire_station', 'park', 'parking', 'sewage', 'waste'],
-  ],
-  O: [
-    [...BASE_UTIL, 'police_station'],
     [...BASE_UTIL, 'sidewalk', 'police_station', 'fire_station', 'bus_depot', 'park', 'parking', 'sewage', 'waste'],
   ],
-  I: [[...BASE_UTIL], [...BASE_UTIL, 'fire_station', 'police_station', 'sewage', 'waste']],
-  L: [[...BASE_UTIL], [...BASE_UTIL, 'fire_station', 'police_station', 'sewage', 'waste']],
+  O: [
+    [...BASE_UTIL, 'police_station', 'fire_station'],
+    [...BASE_UTIL, 'sidewalk', 'police_station', 'fire_station', 'bus_depot', 'park', 'university', 'sewage', 'waste'],
+  ],
+  I: [
+    [...BASE_UTIL, 'fire_station'],
+    [...BASE_UTIL, 'fire_station', 'police_station', 'clinic', 'bus_depot', 'sewage', 'waste'],
+  ],
+  L: [
+    [...BASE_UTIL, 'fire_station'],
+    [...BASE_UTIL, 'fire_station', 'police_station', 'bus_depot', 'sewage', 'waste'],
+  ],
   H: [
     [...BASE_UTIL, 'university', 'police_station'],
     [...BASE_UTIL, 'sidewalk', 'university', 'police_station', 'fire_station', 'park', 'clinic', 'bus_depot', 'sewage', 'waste', 'clean_air'],
@@ -790,6 +804,17 @@ export const UPGRADE_REQUIREMENTS: Record<ZoneType, [UpgradeRequirement[], Upgra
     ['road', 'water', 'power', 'fire_station'],
   ],
 };
+
+/** Има ли зоната нужда от това (на някое ниво) – напр. индустрията не иска училище, а жилищата – да. */
+export function zoneNeeds(z: ZoneType, req: UpgradeRequirement): boolean {
+  const r = UPGRADE_REQUIREMENTS[z];
+  return !!r && (r[0].includes(req) || r[1].includes(req));
+}
+
+/** Кои зони имат нужда от обществената сграда (за подсказките в менюто). */
+export function zonesServedBy(service: string): ZoneType[] {
+  return (Object.keys(UPGRADE_REQUIREMENTS) as ZoneType[]).filter((z) => zoneNeeds(z, service as UpgradeRequirement));
+}
 
 // ---------------------------------------------------------------- сигнали от гражданите
 /** Къде може да се появи проблемът. */

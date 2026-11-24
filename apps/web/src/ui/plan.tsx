@@ -3,7 +3,7 @@
  * и има бутон, който избира точния инструмент. Проверките са върху плочките и статистиката на града.
  */
 import { useState } from 'react';
-import { BALANCE, SERVICES, ZONES, hasSidewalk, type ServiceType, type TileMap } from '@gce/shared';
+import { BALANCE, SERVICES, UPGRADE_REQUIREMENTS, UPGRADE_REQUIREMENT_LABELS, ZONES, hasSidewalk, type ServiceType, type TileMap, type ZoneType } from '@gce/shared';
 import { getState, setState, useStore, type Tool } from '../store';
 import { money, num } from '../format';
 
@@ -29,6 +29,15 @@ export interface Goal {
 }
 
 const price = (s: ServiceType) => money(SERVICES[s].cost);
+const SKIP_REQ = new Set(['road', 'power', 'water']);
+/** Какво иска зоната за ниво 2 и за ниво 3 (без път, ток и вода) – с думи. */
+export function zoneNeedsText(z: ZoneType): string {
+  const [l2, l3] = UPGRADE_REQUIREMENTS[z];
+  const name = (r: string) => UPGRADE_REQUIREMENT_LABELS[r as keyof typeof UPGRADE_REQUIREMENT_LABELS].replace(' в обхват', '').toLowerCase();
+  const a = l2.filter((r) => !SKIP_REQ.has(r)).map(name);
+  const b = l3.filter((r) => !SKIP_REQ.has(r) && !l2.includes(r)).map(name);
+  return `за ниво 2: ${a.length ? a.join(', ') : 'само път, ток и вода'}; за ниво 3 още: ${b.join(', ')}`;
+}
 const zonePrice = (z: keyof typeof ZONES) => money(ZONES[z].zoningCost);
 const streetPrice = () => money(Math.round(BALANCE.construction.roadCost * BALANCE.construction.roadClasses.street.cost));
 type Stats = {
@@ -227,15 +236,16 @@ export const GOALS: Goal[] = [
     id: 'offices',
     icon: '🏢',
     title: 'Офиси',
-    why: 'Офисите плащат най-високите заплати (и данъци). Искат образовани хора, полиция и тротоари.',
+    why: 'Офисите плащат най-високите заплати (и данъци). Искат полиция, пожарна, обществен транспорт, паркове и хора с висше образование.',
     done: (c) => built(c, 'O') >= 2,
     progress: (c) => ({ v: Math.min(1, built(c, 'O') / 2), label: `${built(c, 'O')} / 2 построени офиса` }),
     tool: { kind: 'zone', zone: 'O' },
     button: 'Офисна зона',
     steps: (c) => [
       `„Зони“ → „Офисна“ (${zonePrice('O')} на парцел), до път с ток и вода.`,
-      `Офисите се строят само при достатъчно висока цена на земята (поне ${Math.round(ZONES.O.landValueReq[0] * 100)}%): сложете ги до парк, училище и полиция, в центъра, не до индустрията.`,
-      `Искат образовани работници – ${Math.round(ZONES.O.eduMix[1] * 100)}% със средно и ${Math.round(ZONES.O.eduMix[2] * 100)}% с висше образование: трябват училище и по-късно университет.`,
+      `Офисите се строят само при достатъчно висока цена на земята (поне ${Math.round(ZONES.O.landValueReq[0] * 100)}%): сложете ги в центъра, до парк, далеч от индустрията.`,
+      `Какво искат в обхват – ${zoneNeedsText('O')}.`,
+      `Искат образовани работници – ${Math.round(ZONES.O.eduMix[1] * 100)}% със средно и ${Math.round(ZONES.O.eduMix[2] * 100)}% с висше образование. Хората се учат в училищата и университета в жилищните квартали.`,
       `Сега има ${built(c, 'O')} построени офиса от 2. Ако парцелите стоят празни – „Слоеве“ → „Стойност на земята“ показва къде става.`,
     ],
   },
@@ -338,12 +348,14 @@ export function jobSteps(c: CityLike): string[] {
     `Отляво „Зони“ → „${z.name}“ (${money(z.zoningCost)} на парцел) и влачете по плочките точно до път (на 1 плочка от него).`,
     'Парцелите трябва да имат ток и вода – лентите горе да не са червени, иначе сградите не се строят.',
   ];
-  if (job.zone === 'I') out.push('Индустрията замърсява – сложете я в края на града, далеч от къщите.');
+  if (job.zone === 'I')
+    out.push('Индустрията замърсява – сложете я в края на града, далеч от къщите. Не ѝ трябват училища и паркове, а пожарна (заводите горят най-често).');
   if (job.zone === 'C') out.push('Магазините растат най-добре между жилищата – хората пазаруват близо до дома.');
   if (job.zone === 'O')
     out.push(
-      `Офисите искат цена на земята поне ${Math.round(z.landValueReq[0] * 100)}% (до парк и училище, далеч от индустрия) и образовани хора (${Math.round(edu[1] * 100)}% средно, ${Math.round(edu[2] * 100)}% висше) – без училище ще стоят празни.`,
+      `Офисите искат цена на земята поне ${Math.round(z.landValueReq[0] * 100)}% (до парк, далеч от индустрия) и образовани хора (${Math.round(edu[1] * 100)}% средно, ${Math.round(edu[2] * 100)}% висше).`,
     );
+  out.push(`За да растат, сградите искат в обхват – ${zoneNeedsText(job.zone)}.`);
   out.push('Сградата се строи за няколко дни; после безработицата пада и данъците растат (вижте „Пари“).');
   return out;
 }

@@ -9,6 +9,7 @@ import {
   UPGRADE_REQUIREMENT_LABELS,
   ZONES,
   ZONE_TYPES,
+  zonesServedBy,
   type ServiceType,
   type TileMap,
   type UpgradeRequirement,
@@ -392,7 +393,7 @@ function Toolbar() {
                 key={sv}
                 icon={SERVICE_ICON[sv]}
                 label={SERVICES[sv].name}
-                hint={SERVICES[sv].radius ? `обхват ${SERVICES[sv].radius} плочки` : undefined}
+                hint={serviceHint(sv)}
                 needs={needsLine({ kind: 'service', service: sv })}
                 price={money(SERVICES[sv].cost)}
                 onClick={() => pick({ kind: 'service', service: sv })}
@@ -446,6 +447,15 @@ function Toolbar() {
       </div>
     </nav>
   );
+}
+
+/** Подсказка за услуга в менюто: обхват и за кои зони е нужна (индустрията не иска училище и т.н.). */
+function serviceHint(sv: ServiceType): string | undefined {
+  const zs = zonesServedBy(sv);
+  const parts: string[] = [];
+  if (SERVICES[sv].radius) parts.push(`обхват ${SERVICES[sv].radius}`);
+  if (zs.length) parts.push(`нужна на: ${zs.map((z) => ZONES[z].name.toLowerCase()).join(', ')}`);
+  return parts.length ? parts.join(' · ') : undefined;
 }
 
 // ------------------------------------------------------------------ съветник „следваща стъпка“

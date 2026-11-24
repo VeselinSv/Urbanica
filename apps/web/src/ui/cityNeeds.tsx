@@ -2,7 +2,7 @@
  * „От какво се нуждае градът сега“ – подредени по спешност нужди, всяка с причина и бутон, който
  * директно избира правилния инструмент/слой/панел. Смята се само от данните на града в браузъра.
  */
-import { SERVICES, ZONES, type MoodFactor, type TileMap, type ZoneType } from '@gce/shared';
+import { SERVICES, ZONES, zonesServedBy, type MoodFactor, type TileMap, type ZoneType } from '@gce/shared';
 import { setState, useStore, type CityDetail, type CoverageOf, type Layer, type Tool } from '../store';
 import { CORE_KINDS, COVERAGE_ICON, coverageView } from '../map/coverage';
 import { money, num, pct } from '../format';
@@ -37,6 +37,11 @@ type S = {
 };
 
 const ZONE_ICON: Record<ZoneType, string> = { R: '🏠', C: '🛍', I: '🏭', O: '🏢', A: '🌾', L: '📦', H: '🔬' };
+/** За кои зони е нужна услугата – с малки букви, напр. „жилищна, търговска, офисна“. */
+const servedText = (service: string) =>
+  zonesServedBy(service)
+    .map((z) => ZONES[z].name.toLowerCase())
+    .join(', ');
 
 export function cityNeeds(
   city: { tiles: unknown; parcels: { px: number; py: number }[]; stats?: unknown; treasury?: number; border?: CityDetail['border'] },
@@ -132,7 +137,7 @@ export function cityNeeds(
           why:
             v.sources === 0
               ? 'Сградите не стигат следващото ниво без тази услуга, а хората са по-недоволни.'
-              : `Покрити са ${v.covered} от ${v.covered + v.uncovered}. Вижте червените плочки на слоя „Обхват“.`,
+              : `Покрити са ${v.covered} от ${v.covered + v.uncovered} сгради, които имат нужда (${servedText(k)}). Вижте червените плочки на слоя „Обхват“.`,
           button: `+ ${SERVICES[k].name}`,
           tool: { kind: 'service', service: k },
           layer: 'coverage',

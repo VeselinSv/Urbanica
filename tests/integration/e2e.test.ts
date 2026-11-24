@@ -190,7 +190,8 @@ describe('E2E: пълен път на играча', () => {
     );
     if (placed) {
       expect(company.data.facilitiesDetail[0].staffing).toBeGreaterThan(0);
-      expect(company.data.inventory.find((i) => i.good === 'grain')?.quantity ?? 0).toBeGreaterThan(0);
+      // фермата произвежда; зърното може вече да е продадено (новите компании продават автоматично)
+      expect(company.data.facilitiesDetail[0].lastRuns).toBeGreaterThan(0);
     }
   });
 

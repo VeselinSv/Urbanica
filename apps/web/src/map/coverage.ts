@@ -2,7 +2,7 @@
  * Обхват на услугите – смята се в браузъра от плочките на града със същите правила като симулацията
  * (радиус на сградата, спирките дават обхват само ако има автобусно депо). Силата спада към края на кръга.
  */
-import { BALANCE, SERVICES, tileKey, type ServiceType, type TileMap } from '@gce/shared';
+import { BALANCE, SERVICES, tileKey, zoneNeeds, type ServiceType, type TileMap, type UpgradeRequirement } from '@gce/shared';
 import type { CoverageOf } from '../store';
 
 export const COVERAGE_KINDS: Exclude<CoverageOf, 'all'>[] = ['police_station', 'fire_station', 'clinic', 'school', 'university', 'bus_depot', 'park', 'parking'];
@@ -65,7 +65,7 @@ export function territoryOf(parcels: { px: number; py: number }[]): string[] {
 export interface CoverageView {
   /** плочка → [цвят, прозрачност] */
   cells: Record<string, [number, number]>;
-  /** заети сгради (зони с ниво > 0) с/без обхват */
+  /** построени сгради, които имат нужда от услугата, с/без обхват */
   covered: number;
   uncovered: number;
   /** брой сгради на услугата */
@@ -75,7 +75,10 @@ export interface CoverageView {
 /** Какво да се нарисува: една услуга (нейният цвят, по-силно до сградата) или „Всички“ – колко от 4-те основни стигат. */
 export function coverageView(tiles: TileMap, parcels: { px: number; py: number }[], of: CoverageOf): CoverageView {
   const territory = territoryOf(parcels);
-  const buildings = Object.entries(tiles).filter(([, t]) => t.t === 'zone' && t.lvl > 0);
+  // сградите, които имат нужда от услугата (индустрията не иска училище, търговията – болница…)
+  const needs = (t: TileMap[string], kind: Exclude<CoverageOf, 'all'>) => t.t === 'zone' && zoneNeeds(t.z, kind as UpgradeRequirement);
+  const allBuildings = Object.entries(tiles).filter(([, t]) => t.t === 'zone' && t.lvl > 0);
+  const buildings = of === 'all' ? allBuildings.filter(([, t]) => CORE_KINDS.some((c) => needs(t, c))) : allBuildings.filter(([, t]) => needs(t, of));
   const cells: Record<string, [number, number]> = {};
   let covered = 0;
   let sources = 0;
@@ -86,7 +89,7 @@ export function coverageView(tiles: TileMap, parcels: { px: number; py: number }
       // 0 → червено, 2 → жълто, 4 → зелено
       cells[k] = [n >= 4 ? 0x22c55e : n === 3 ? 0x84cc16 : n === 2 ? 0xeab308 : n === 1 ? 0xf97316 : 0xef4444, n ? 0.38 : 0.2];
     }
-    for (const [k] of buildings) if (maps.every((m) => m[k])) covered++;
+    for (const [k, t] of buildings) if (CORE_KINDS.every((c, i) => !needs(t, c) || maps[i][k])) covered++;
     for (const t of Object.values(tiles)) if (t.t === 'service' && (CORE_KINDS as string[]).includes(t.s)) sources++;
   } else {
     const m = coverageFor(tiles, territory, of);
