@@ -186,7 +186,8 @@ export class CityController {
 
   @Post(':id/links')
   buildLink(@Param('id') id: string, @Body() body: unknown, @CurrentUser() user: User, @IdemKey() key?: string) {
-    return D.buildLink(prisma, user.id, id, parse(LinkSchema, body).toCityId, key);
+    const b = parse(LinkSchema, body);
+    return D.buildLink(prisma, user.id, id, b.toCityId, key, b.path);
   }
 
   @Post(':id/parcels')

@@ -353,3 +353,49 @@ describe('Граница между градове', () => {
     void oy;
   });
 });
+
+describe('Магистрала с начертано трасе', () => {
+  it('трасето трябва да е непрекъснато, извън градовете, от ръба на единия до ръба на другия; цена по терена', async () => {
+    const a = await player('RouteA');
+    const b = await player('RouteB');
+    const { city } = await cityWithRoad(a.id);
+    const other = await foundCity(prisma, b.id, 'Далечен');
+    const S = BALANCE.world.parcelSize;
+    const gen = await worldGen(prisma);
+    const parcels = await prisma.parcel.findMany({ where: { cityId: city.id } });
+    const maxPx = Math.max(...parcels.map((p) => p.px));
+    const minPy = Math.min(...parcels.map((p) => p.py));
+    // ред на изток или на запад от града, по който 16 плочки са проходими (може мост/планина), а след тях – парцел на другия град
+    const minPx = Math.min(...parcels.map((p) => p.px));
+    let path: { x: number; y: number }[] = [];
+    let target: { px: number; py: number } | null = null;
+    for (const dir of [1, -1]) {
+      const x0 = dir > 0 ? (maxPx + 1) * S : minPx * S - 1;
+      for (let yy = minPy * S; yy < (minPy + 3) * S && !target; yy++) {
+        const cand = Array.from({ length: 2 * S }, (_, i) => ({ x: x0 + dir * i, y: yy }));
+        const tx = x0 + dir * 2 * S;
+        if ([...cand, { x: tx, y: yy }].every((p) => Number.isFinite(gen.roadCostMult(p.x, p.y)))) {
+          path = cand;
+          target = { px: Math.floor(tx / S), py: Math.floor(yy / S) };
+        }
+      }
+      if (target) break;
+    }
+    expect(target).not.toBeNull();
+    const t = target!;
+    const between = [t.px, Math.floor(path[0].x / S), Math.floor(path[path.length - 1].x / S)];
+    await prisma.parcel.deleteMany({ where: { py: t.py, px: { in: between } } });
+    await prisma.parcel.create({ data: { ...t, cityId: other.id } });
+    // с дупка – не е непрекъснато
+    await expect(buildLink(prisma, a.id, city.id, other.id, undefined, [...path.slice(0, 3), ...path.slice(4)])).rejects.toThrow(/непрекъснато/);
+    // не стига до другия град
+    await expect(buildLink(prisma, a.id, city.id, other.id, undefined, path.slice(0, 5))).rejects.toThrow(/точно до/);
+    const r = await buildLink(prisma, a.id, city.id, other.id, undefined, path);
+    const expected = path.reduce((s, p) => s + Math.round(BALANCE.links.costPerTile * gen.roadCostMult(p.x, p.y)), 0);
+    expect(r.cost).toBe(expected);
+    expect(r.length).toBe(path.length);
+    const link = await prisma.cityLink.findFirst({ where: { OR: [{ aId: city.id }, { bId: city.id }] } });
+    expect((link?.path as unknown as number[][]).length).toBe(path.length);
+    await expectInvariants();
+  });
+});

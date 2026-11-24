@@ -761,12 +761,14 @@ export const BRIDGE_H = 11;
  * (h0 – към −ос, h1 – към +ос). Подходът на брега се издига от 0 до половината, а първата плочка над водата –
  * до пълната височина: мостът „излиза“ от земята. null – не е прав мост/подход (кръстовища остават ниски).
  */
-export function bridgeInfo(gen: WorldGenerator, lookup: TileLookup, x: number, y: number): { axis: 'x' | 'y'; h0: number; h1: number; water: boolean } | null {
+export function bridgeInfo(gen: WorldGenerator, lookup: TileLookup, x: number, y: number): { axis: 'x' | 'y'; h0: number; h1: number; water: boolean; cross?: boolean } | null {
   if (lookup(x, y)?.t !== 'road') return null;
   const road = (a: number, b: number) => lookup(a, b)?.t === 'road';
   const ax = road(x + 1, y) || road(x - 1, y);
   const ay = road(x, y + 1) || road(x, y - 1);
-  if (ax === ay) return null;
+  // кръстовище над вода – квадратна плоча на височината на моста (иначе мостът „пропада“ там)
+  if (ax && ay) return isBridge(gen, x, y) ? { axis: 'x', h0: BRIDGE_H, h1: BRIDGE_H, water: true, cross: true } : null;
+  if (!ax && !ay) return null;
   const axis: 'x' | 'y' = ax ? 'x' : 'y';
   const [dx, dy] = axis === 'x' ? [1, 0] : [0, 1];
   const br = (a: number, b: number) => road(a, b) && isBridge(gen, a, b);
@@ -872,12 +874,50 @@ function paintBridgesTunnels(g: Ctx, gen: WorldGenerator, roads: RoadTile[], loo
     }
     const tk = tunnelKind(gen, lookup, r.x, r.y);
     if (tk === 'inside') {
-      // планината над тунела
+      // целият тунел се вижда: бетонна тръба с осветление под полупрозрачната планина („рентгенов“ изглед)
+      const st = roadStyle(r.t);
+      g.save();
+      roadPath(g, r);
+      g.lineCap = 'butt';
+      g.lineWidth = st.width + 0.2;
+      g.strokeStyle = rgb(0x8f8a80);
+      g.stroke();
+      g.lineWidth = st.width + 0.08;
+      g.strokeStyle = rgb(0x3a3c40);
+      g.stroke();
+      g.restore();
       g.save();
       g.beginPath();
       g.rect(r.x - 0.02, r.y - 0.02, 1.04, 1.04);
       g.clip();
+      g.globalAlpha = 0.5;
       paintTerrain(g, gen, r.x, r.y, 1, detail >= 2 ? 4 : 2, season);
+      g.restore();
+      // ребра на тръбата и лампите по тавана
+      const cx = r.x + 0.5;
+      const cy = r.y + 0.5;
+      const horiz = r.arms[0] || r.arms[2];
+      g.save();
+      g.globalAlpha = 0.85;
+      for (const f of [0.15, 0.5, 0.85]) {
+        g.beginPath();
+        if (horiz) {
+          g.moveTo(r.x + f, cy - st.width / 2 - 0.08);
+          g.lineTo(r.x + f, cy + st.width / 2 + 0.08);
+        } else {
+          g.moveTo(cx - st.width / 2 - 0.08, r.y + f);
+          g.lineTo(cx + st.width / 2 + 0.08, r.y + f);
+        }
+        g.lineWidth = 0.03;
+        g.strokeStyle = rgb(0xb5b0a5);
+        g.stroke();
+      }
+      for (const f of [0.25, 0.75]) {
+        g.beginPath();
+        g.arc(horiz ? r.x + f : cx, horiz ? cy : r.y + f, 0.045, 0, Math.PI * 2);
+        g.fillStyle = 'rgba(255,214,140,0.95)';
+        g.fill();
+      }
       g.restore();
     }
   }
@@ -1104,7 +1144,7 @@ function collectObjects(gen: WorldGenerator, lookup: TileLookup, x0: number, y0:
               d: x + y + 0.9,
               wx: x + 0.5,
               wy: y + 0.5,
-              key: { k: 'bridge', axis: bi.axis, h0: bi.h0, h1: bi.h1, water: bi.water, w: Math.round(geo.width * 100) / 100, lamp: (x + y) % 2 === 0, v: v % 3 },
+              key: { k: 'bridge', axis: bi.axis, h0: bi.h0, h1: bi.h1, water: bi.water, w: Math.round(geo.width * 100) / 100, lamp: !bi.cross && (x + y) % 2 === 0, v: v % 3, ...(bi.cross ? { cross: true } : {}) },
             });
           }
           if (t.st && !mid) {

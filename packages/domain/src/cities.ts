@@ -375,9 +375,9 @@ export async function build(prisma: PrismaClient, userId: string, cityId: string
               continue;
             }
             const def = SERVICES[input.service];
-            // Сградите имат основи – теренният множител е ограничен до 1.3 (пътищата плащат пълния).
-            const c = Math.round(def.cost * Math.min(1.3, gen.roadCostMult(x, y)));
-            if (!Number.isFinite(c) || isWater(terrain)) {
+            // фиксирана цена – точно колкото пише в менюто (теренът оскъпява само пътищата: мостове, тунели)
+            const c = def.cost;
+            if (!Number.isFinite(gen.roadCostMult(x, y)) || isWater(terrain)) {
               reasons.add('Не може да се строи върху вода');
               continue;
             }

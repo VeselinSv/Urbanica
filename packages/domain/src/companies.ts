@@ -115,8 +115,8 @@ export async function buildFacility(
         const placement = gen.satisfiesPlacement(def.placement, input.x, input.y);
         if (!placement.ok) throw bad(placement.reason ?? 'Неподходящо място');
         if (!roadNext(tiles, input.x, input.y)) throw bad('Предприятието трябва да е точно до път (за ток, вода и работници) – първо постройте път до плочката');
-        const mult = gen.roadCostMult(input.x, input.y);
-        const cost = Math.round(def.cost * (Number.isFinite(mult) ? Math.min(mult, 2) : 2));
+        // фиксирана цена – точно колкото пише в менюто
+        const cost = def.cost;
         const tick = await currentTick(tx);
         const facility = await tx.facility.create({
           data: { companyId, cityId: input.cityId, type: input.type, x: input.x, y: input.y, builtTick: tick, cost: BigInt(cost) },
@@ -387,8 +387,8 @@ export function companyAdvice(d: {
   const piled = d.inventory.filter((i) => i.quantity > 200 && !selling.has(i.good));
   if (piled.length && !d.policy.autoSell)
     out.push({ level: 2, text: `Стоката се трупа в склада (${piled.map((i) => i.good).join(', ')}) – включете автоматичните продажби или продайте на борсата.` });
-  else if (piled.length && d.policy.sellPrice > 1.1)
-    out.push({ level: 1, text: 'Стоката не се продава достатъчно бързо – цената на автоматичните продажби е висока. Свалете я към пазарната.' });
+  else if (piled.length && d.policy.sellPrice > BALANCE.market.exportFloor)
+    out.push({ level: 2, text: `Стоката се трупа – на тази цена купуват само жителите и другите играчи. Свалете цената до ${Math.round(BALANCE.market.exportFloor * 100)}% – тогава я изкупува и световният пазар.` });
   if (d.policy.wageLevel > 1.2 && profit < 0) out.push({ level: 1, text: 'Заплатите са високи – по-продуктивни хора, но и по-големи разходи. Ако губите, свалете ги.' });
   if (!out.length && profit > 0) out.push({ level: 1, text: `Компанията печели ≈ ${(Math.round(profit) / 100).toLocaleString('bg-BG')} € на ден. Помислете за още съоръжения или подобрения.` });
   return out.sort((a, b) => b.level - a.level);

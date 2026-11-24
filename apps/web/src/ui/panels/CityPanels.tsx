@@ -24,7 +24,7 @@ import { bumpData, errorToast, getState, refreshAll, refreshCity, setState, toas
 import { KIND_LABELS, money, moneyExact, num, pct, toCents } from '../../format';
 import { DevPlan, bestJobZone } from '../plan';
 import { CityNeeds } from '../cityNeeds';
-import { AsyncButton, DemandBar, Field, Meter, Section, Stat, Table, useApi } from '../common';
+import { AsyncButton, DemandBar, Field, HowTo, Meter, Section, Stat, Table, useApi } from '../common';
 import { describeTile } from '../../map/MapView';
 import { REQ_ICON, reqTool, reqToolLabel } from '../needs';
 import { resetGame } from '../reset';
@@ -578,6 +578,16 @@ function CityLinks() {
   const L = BALANCE.links;
   return (
     <div>
+      <HowTo
+        title="Как работи търговията между градовете?"
+        steps={[
+          <>Всяка компания има склад във всеки град, където има съоръжение или седалище. Стоката се продава от склада в даден град и се купува за склад в даден град.</>,
+          <>Когато купувате стока, продадена в друг град, тя пътува няколко дни (камиони) и превозът се плаща. С <b>магистрала</b> между двата града превозът е с {Math.round((1 - BALANCE.links.shippingMult) * 100)}% по-евтин и по-бърз – и за двамата кметове.</>,
+          <>Градът купувач може да има <b>мито при внос</b> (освен за съюзници) – то се добавя към цената.</>,
+          <>Магистралата се строи от кмета на единия град (цена по разстоянието); на картата тя стига до ръба на двата града и се свързва с най-близкия голям път.</>,
+          <>Когато двата града се допрат, се свързват само с градска магистрала от поне 20 плочки до границата.</>,
+        ]}
+      />
       <p className="small muted">
         Превозът на стоки до свързан град е с {Math.round((1 - L.shippingMult) * 100)}% по-евтин. Цена: {money(L.costPerTile)} за плочка (до {L.maxLength}{' '}
         плочки).
@@ -595,18 +605,13 @@ function CityLinks() {
             ) : c.dist > L.maxLength ? (
               <span className="muted small">твърде далеч</span>
             ) : (
-              <AsyncButton
-                className="btn small"
-                onClick={async () => {
-                  const res = await post<{ cost: number }>(`/cities/${city.id}/links`, { toCityId: c.id }, true);
-                  toast(`Магистралата е построена (${money(res.cost)})`, 'success');
-                  links.reload();
-                  await refreshCity();
-                  bumpData();
-                }}
+              <button
+                className="btn small primary"
+                title="Начертайте трасето на картата: от ръба на вашия град до ръба на другия"
+                onClick={() => setState({ tool: { kind: 'link', toCityId: c.id, name: c.name }, linkDraft: [], panelOpen: false })}
               >
-                Построй · {money(Math.round(Math.max(1, c.dist) * L.costPerTile))}
-              </AsyncButton>
+                ✏ Начертай трасе
+              </button>
             )}
           </li>
         ))}

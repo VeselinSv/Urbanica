@@ -3,23 +3,78 @@
  * превозът на стоки между двата града е по-евтин и по-бърз (множител BALANCE.links.shippingMult).
  */
 import { BALANCE, type TileMap } from '@gce/shared';
-import { isUniqueViolation, withTx, type PrismaClient, type Tx } from '@gce/database';
+import { Prisma, isUniqueViolation, withTx, type PrismaClient, type Tx } from '@gce/database';
 import { DomainError, bad, conflict, forbidden, notFound } from './errors';
 import { SYS, acc, transfer } from './ledger';
 import { idempotent } from './idempotency';
-import { cityDistance, currentTick } from './world';
+import { cityDistance, currentTick, worldGen } from './world';
 import { lockCity } from './cities';
 import { logEvent } from './events';
 import { loadCityHeavy } from './cityCache';
 
 const pair = (a: string, b: string): [string, string] => (a < b ? [a, b] : [b, a]);
 
+/**
+ * Проверка на начертаното трасе: последователни съседни плочки (без диагонали), извън територията на който и да
+ * е град, на суша или над река/езеро (мост), не в открито море; началото опира в единия град, краят – в другия.
+ * Цена: `costPerTile` × теренен множител на всяка плочка (река ×4, планина ×3 – тунел…).
+ */
+export async function checkRoute(tx: Tx | PrismaClient, fromCityId: string, toCityId: string, path: { x: number; y: number }[]) {
+  const S = BALANCE.world.parcelSize;
+  const maxTiles = BALANCE.links.maxLength * 2;
+  if (path.length > maxTiles) throw bad(`Трасето е твърде дълго (максимум ${maxTiles} плочки)`);
+  const seen = new Set<string>();
+  const pk = (x: number, y: number) => `${Math.floor(x / S)},${Math.floor(y / S)}`;
+  for (let i = 0; i < path.length; i++) {
+    const k = `${path[i].x},${path[i].y}`;
+    if (seen.has(k)) throw bad('Трасето минава два пъти през една и съща плочка');
+    seen.add(k);
+    if (i > 0 && Math.abs(path[i].x - path[i - 1].x) + Math.abs(path[i].y - path[i - 1].y) !== 1) throw bad('Трасето трябва да е непрекъснато (съседни плочки, без диагонали)');
+  }
+  const parcels = await tx.parcel.findMany({
+    where: { OR: [...new Set(path.flatMap((p) => [-1, 0, 1].flatMap((d) => [pk(p.x + d, p.y), pk(p.x, p.y + d)])))].map((k) => {
+      const [px, py] = k.split(',').map(Number);
+      return { px, py };
+    }) },
+    select: { px: true, py: true, cityId: true },
+  });
+  const owner = new Map(parcels.map((p) => [`${p.px},${p.py}`, p.cityId]));
+  const cityAt = (x: number, y: number) => owner.get(pk(x, y));
+  for (const p of path) if (cityAt(p.x, p.y)) throw bad('Магистралата между градовете минава извън териториите на градовете – вътре строете градски път');
+  const touches = (p: { x: number; y: number }, id: string) =>
+    [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ].some(([dx, dy]) => cityAt(p.x + dx, p.y + dy) === id);
+  const first = path[0];
+  const last = path[path.length - 1];
+  const ok = (touches(first, fromCityId) && touches(last, toCityId)) || (touches(first, toCityId) && touches(last, fromCityId));
+  if (!ok) throw bad('Трасето трябва да започва точно до вашия град и да стига точно до другия град');
+  const gen = await worldGen(tx);
+  let cost = 0;
+  for (const p of path) {
+    const m = gen.roadCostMult(p.x, p.y);
+    if (!Number.isFinite(m)) throw bad('Магистрала не може да минава през открито море или извън България');
+    cost += Math.round(BALANCE.links.costPerTile * m);
+  }
+  return { route: path.map((p) => [p.x, p.y] as [number, number]), cost };
+}
+
 /** Цена на магистрала с дадена дължина (центове). */
 export function linkCost(length: number) {
   return Math.round(length * BALANCE.links.costPerTile);
 }
 
-export async function buildLink(prisma: PrismaClient, userId: string, cityId: string, toCityId: string, idemKey?: string) {
+export async function buildLink(
+  prisma: PrismaClient,
+  userId: string,
+  cityId: string,
+  toCityId: string,
+  idemKey?: string,
+  path?: { x: number; y: number }[],
+) {
   if (cityId === toCityId) throw bad('Изберете друг град');
   try {
     return await withTx(prisma, (tx) =>
@@ -30,11 +85,18 @@ export async function buildLink(prisma: PrismaClient, userId: string, cityId: st
         if (!other) throw notFound('Градът не съществува');
         const [aId, bId] = pair(cityId, toCityId);
         if (await tx.cityLink.findUnique({ where: { aId_bId: { aId, bId } } })) throw conflict('Двата града вече са свързани');
-        const length = Math.max(1, Math.round(cityDistance(city, other)));
-        if (length > BALANCE.links.maxLength) throw bad(`Градът е твърде далеч (максимум ${BALANCE.links.maxLength} плочки)`);
-        const cost = linkCost(length);
+        let length = Math.max(1, Math.round(cityDistance(city, other)));
+        let cost = linkCost(length);
+        let route: [number, number][] = [];
+        if (path?.length) {
+          // трасе, начертано от кмета – проверка и цена по терена (мостове и тунели струват повече)
+          const r = await checkRoute(tx, cityId, toCityId, path);
+          route = r.route;
+          length = route.length;
+          cost = r.cost;
+        } else if (length > BALANCE.links.maxLength) throw bad(`Градът е твърде далеч (максимум ${BALANCE.links.maxLength} плочки)`);
         const tick = await currentTick(tx);
-        await tx.cityLink.create({ data: { aId, bId, builtById: userId, length, cost: BigInt(cost), createdTick: tick } });
+        await tx.cityLink.create({ data: { aId, bId, builtById: userId, length, cost: BigInt(cost), createdTick: tick, path: route as unknown as Prisma.InputJsonValue } });
         await transfer(tx, {
           from: acc.city(cityId),
           to: SYS.WORLD,
@@ -80,6 +142,7 @@ export async function listLinks(prisma: PrismaClient | Tx) {
         b: { id: b.id, name: b.name, originX: b.originX, originY: b.originY, ...end(b, a) },
         length: l.length,
         cost: Number(l.cost),
+        path: (l.path as unknown as [number, number][]) ?? [],
       };
     });
 }

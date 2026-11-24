@@ -150,3 +150,19 @@ export function Field({ label, children }: { label: string; children: ReactNode 
     </label>
   );
 }
+
+/** Сгъваемо обяснение „Как работи?“ – кратки стъпки в самата игра. */
+export function HowTo({ title = "Как работи?", steps }: { title?: string; steps: ReactNode[] }) {
+  return (
+    <details className="callout help">
+      <summary>
+        <b>{title}</b> (кликнете)
+      </summary>
+      <ol className="small">
+        {steps.map((s, i) => (
+          <li key={i}>{s}</li>
+        ))}
+      </ol>
+    </details>
+  );
+}

@@ -1,7 +1,7 @@
 import { Application, Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
 import { BALANCE, hashString, parseKey, tileKey, type TileMap, type TileState } from '@gce/shared';
 import { REAL_PLACES, type WorldGenerator } from '@gce/world-generation';
-import { CHUNK, bridgeInfo, paintChunk, paintCountry, paintStats, tunnelKind, type ChunkCanvas, type CityActor } from './paint';
+import { CHUNK, bridgeInfo, paintChunk, paintCountry, paintStats, type ChunkCanvas, type CityActor } from './paint';
 import { TH, TW, getSprite } from './sprites';
 import { CityLife, type IssueMarker, type NeedBadge } from './life';
 import { Atmosphere, type DayMode, type Weather } from './atmosphere';
@@ -55,6 +55,8 @@ export interface LinkEnd {
 export interface LinkView {
   a: LinkEnd;
   b: LinkEnd;
+  /** трасето, начертано от кмета ([x, y] по ред); празно – старите връзки (автоматично трасе) */
+  path?: [number, number][];
 }
 
 /** Нива на детайлност: държава (една текстура), регион (чанкове с ниска резолюция), близо (пълен детайл). */
@@ -102,6 +104,9 @@ export class IsoRenderer {
   labelLayer = new Container();
   private gen: WorldGenerator | null = null;
   private cityTiles = new Map<string, TileState>();
+  /** Виртуалните пътни плочки на магистралите между градовете и кои от тях са добавени към cityTiles. */
+  private linkTiles = new Map<string, TileState>();
+  private linkOwned = new Set<string>();
   private cityJson = new Map<string, string>();
   private cityList: CityRender[] = [];
   private chunks: Record<Lod, Map<string, ChunkEntry>> = { mid: new Map(), near: new Map() };
@@ -206,85 +211,90 @@ export class IsoRenderer {
     if (this.life) this.life.traffic.snowing = w === 'snow';
   }
   /**
-   * Магистрали между градовете – като истинските: две платна с по две ленти, зелена разделителна ивица с
-   * мантинели, аварийни ленти с плътни линии. На ръба на града магистралата не минава през него, а се
-   * свързва направо с най-близкия голям градски път и там се разклонява – второ отклонение към друг път.
+   * Магистрали между градовете като истински пътища на картата: плочки „градска магистрала“ (две платна,
+   * мантинели, мостове над реките, тунели в планините – същото рисуване като градските пътища) от възела на
+   * единия град до възела на другия, а от възела – булевард направо до най-близкия голям път в града и
+   * разклонение към втори път. Плочките са само за картата (сървърът пази магистралата като връзка).
    */
   setLinks(links: LinkView[]) {
-    const g = this.linkLayer;
-    g.clear();
+    this.linkLayer.clear();
+    const next = new Map<string, TileState>();
     type W = { x: number; y: number };
-    const sc = (p: W) => toScreen(p.x + 0.5, p.y + 0.5);
-    // отсечка в света (плочки) с отместване d по нормалата
-    const seg = (a: W, b: W, d: number): [W, W] => {
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const L = Math.hypot(dx, dy) || 1;
-      const nx = (-dy / L) * d;
-      const ny = (dx / L) * d;
-      return [
-        { x: a.x + nx, y: a.y + ny },
-        { x: b.x + nx, y: b.y + ny },
-      ];
+    const put = (p: W, c: 'highway' | 'avenue') => {
+      const k = tileKey(p.x, p.y);
+      if (next.get(k)?.t === 'road' && (next.get(k) as { c?: string }).c === 'highway') return;
+      next.set(k, { t: 'road', c });
     };
-    const stroke = (a: W, b: W, d: number, width: number, color: number, alpha = 1, dash = 0) => {
-      const [p, q] = seg(a, b, d);
-      const P1 = sc(p);
-      const P2 = sc(q);
-      if (!dash) {
-        g.moveTo(P1.x, P1.y).lineTo(P2.x, P2.y).stroke({ width, color, alpha, cap: 'butt' });
-        return;
+    const seg = (a: W, b: W, c: 'highway' | 'avenue') => {
+      const sx = Math.sign(b.x - a.x);
+      const sy = Math.sign(b.y - a.y);
+      let x = a.x;
+      let y = a.y;
+      put({ x, y }, c);
+      while (x !== b.x) {
+        x += sx;
+        put({ x, y }, c);
       }
-      const L = Math.hypot(P2.x - P1.x, P2.y - P1.y);
-      const n = Math.floor(L / (dash * 2));
-      for (let i = 0; i < n; i++) {
-        const t0 = (i * dash * 2) / L;
-        const t1 = (i * dash * 2 + dash) / L;
-        g.moveTo(P1.x + (P2.x - P1.x) * t0, P1.y + (P2.y - P1.y) * t0)
-          .lineTo(P1.x + (P2.x - P1.x) * t1, P1.y + (P2.y - P1.y) * t1)
-          .stroke({ width, color, alpha });
+      while (y !== b.y) {
+        y += sy;
+        put({ x, y }, c);
       }
     };
-    /** Двупосочен път: при dual – две платна с разделителна ивица (магистрала), иначе – път с две ленти. */
-    const road = (a: W, b: W, dual: boolean) => {
-      const half = dual ? 0.62 : 0.34;
-      stroke(a, b, 0, half * 2 * 34 + 8, 0x2f3237, 0.25); // насип/сянка
-      stroke(a, b, 0, half * 2 * 34, 0x9e9a8f, 1); // банкети
-      if (dual) {
-        for (const s of [-1, 1]) {
-          stroke(a, b, s * 0.33, 17, 0x4c4f54, 1);
-          stroke(a, b, s * 0.33 + s * 0.24, 0.9, 0xf2f2f2, 0.9); // плътна крайна линия
-          stroke(a, b, s * 0.33 - s * 0.2, 0.9, 0xf2f2f2, 0.75); // до разделителната
-          stroke(a, b, s * 0.33, 0.8, 0xf2f2f2, 0.85, 7); // прекъсната между лентите
-        }
-        stroke(a, b, 0, 4.2, 0x6f8f4a, 1); // зелена ивица
-        stroke(a, b, -0.05, 0.8, 0xd6dbdf, 0.95); // мантинели
-        stroke(a, b, 0.05, 0.8, 0xd6dbdf, 0.95);
+    // Z-образно трасе: по дългата ос до средата, напряко, после до края (дълги прави участъци като истинска магистрала)
+    const route = (a: W, b: W, c: 'highway' | 'avenue') => {
+      if (Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)) {
+        const mx = Math.round((a.x + b.x) / 2);
+        seg(a, { x: mx, y: a.y }, c);
+        seg({ x: mx, y: a.y }, { x: mx, y: b.y }, c);
+        seg({ x: mx, y: b.y }, b, c);
       } else {
-        stroke(a, b, 0, 21, 0x4c4f54, 1);
-        stroke(a, b, 0, 0.8, 0xf2f2f2, 0.85, 6);
-        for (const s of [-1, 1]) stroke(a, b, s * 0.28, 0.8, 0xf2f2f2, 0.8);
+        const my = Math.round((a.y + b.y) / 2);
+        seg(a, { x: a.x, y: my }, c);
+        seg({ x: a.x, y: my }, { x: b.x, y: my }, c);
+        seg({ x: b.x, y: my }, b, c);
       }
     };
-    const endOf = (e: LinkEnd) => ({
-      gate: e.gate ?? { x: e.originX, y: e.originY },
-      exit: e.exit ?? { x: e.originX, y: e.originY },
-      branch: e.branch ?? null,
-    });
     for (const l of links) {
-      const A = endOf(l.a);
-      const B = endOf(l.b);
-      road(A.gate, B.gate, true);
-      for (const e of [A, B]) {
-        // направо към главния градски път, после разклонение към втори път
-        road(e.gate, e.exit, false);
-        if (e.branch) road(e.gate, e.branch, false);
-        // „клин“ на разклонението
-        const p = sc(e.gate);
-        g.circle(p.x, p.y, 9).fill({ color: 0x4c4f54 });
-        g.circle(p.x, p.y, 3.2).fill({ color: 0xf2f2f2, alpha: 0.6 });
+      const ends = [l.a, l.b].map((e) => ({ gate: e.gate ?? { x: e.originX, y: e.originY }, exit: e.exit ?? { x: e.originX, y: e.originY }, branch: e.branch ?? null }));
+      if (l.path?.length) {
+        // начертаното трасе – точно където го е прокарал кметът; краищата се свързват с най-близкия път на всеки град
+        const pts = l.path.map(([x, y]) => ({ x, y }));
+        for (const p of pts) put(p, 'highway');
+        const first = pts[0];
+        const last = pts[pts.length - 1];
+        const d = (p: W, q: W) => Math.abs(p.x - q.x) + Math.abs(p.y - q.y);
+        const [ea, eb] = d(first, ends[0].exit) + d(last, ends[1].exit) <= d(first, ends[1].exit) + d(last, ends[0].exit) ? [first, last] : [last, first];
+        route(ea, ends[0].exit, 'avenue');
+        route(eb, ends[1].exit, 'avenue');
+        continue;
+      }
+      route(ends[0].gate, ends[1].gate, 'highway');
+      for (const e of ends) {
+        route(e.gate, e.exit, 'avenue');
+        if (e.branch) route(e.gate, e.branch, 'avenue');
       }
     }
+    // градските плочки имат предимство – виртуалните пътища само допълват празните места
+    const changed: string[] = [];
+    for (const k of this.linkTiles.keys()) if (!next.has(k)) changed.push(k);
+    for (const k of next.keys()) if (!this.linkTiles.has(k)) changed.push(k);
+    this.linkTiles = next;
+    this.mergeLinks();
+    if (changed.length) {
+      this.invalidate(changed);
+      this.refreshLife();
+    }
+  }
+
+  /** Добавя пътищата на магистралите към плочките за рисуване (без да покрива градски плочки). */
+  private mergeLinks() {
+    for (const k of this.linkOwned) this.cityTiles.delete(k);
+    this.linkOwned.clear();
+    for (const [k, t] of this.linkTiles)
+      if (!this.cityTiles.has(k)) {
+        this.cityTiles.set(k, t);
+        this.linkOwned.add(k);
+      }
   }
 
   setTrafficLoad(t: Record<string, number> | undefined) {
@@ -678,24 +688,33 @@ export class IsoRenderer {
     const changed: string[] = [];
     const next = new Map<string, string>();
     for (const c of cities) for (const [k, t] of Object.entries(c.tiles)) next.set(k, JSON.stringify(t));
+    for (const [k, t] of this.linkTiles) if (!next.has(k)) next.set(k, JSON.stringify(t));
     for (const [k, j] of next) if (this.cityJson.get(k) !== j) changed.push(k);
     for (const k of this.cityJson.keys()) if (!next.has(k)) changed.push(k);
     this.cityJson = next;
     this.cityTiles.clear();
     for (const c of cities) for (const [k, t] of Object.entries(c.tiles)) this.cityTiles.set(k, t);
+    this.linkOwned.clear();
+    this.mergeLinks();
     if (showZoning !== this.zoning) {
       this.zoning = showZoning;
       this.resetTerrain();
     } else if (changed.length) this.invalidate(changed);
     this.drawCitiesFar();
     this.updateCityLabels();
-    if (changed.length) {
+    if (changed.length) this.refreshLife();
+  }
+
+  /** Трафикът и атмосферата следят плочките (мостове – височина на платното). */
+  private refreshLife() {
+    {
       if (this.life && this.gen) {
         const hidden = new Set<string>();
         const bridges = new Map<string, { axis: 'x' | 'y'; h0: number; h1: number }>();
         for (const k of this.cityTiles.keys()) {
           const [x, y] = parseKey(k);
-          if (tunnelKind(this.gen, this.lookup, x, y) === 'inside') hidden.add(k);
+          // тунелите се виждат „на рентген“ – колите в тях също
+          void hidden;
           const bi = bridgeInfo(this.gen, this.lookup, x, y);
           if (bi) bridges.set(k, bi);
         }

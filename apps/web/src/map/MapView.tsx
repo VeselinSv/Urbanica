@@ -46,6 +46,7 @@ import { Splash } from '../ui/Brand';
 import { get, post } from '../api';
 import { bumpData, errorToast, getState, refreshCities, refreshCity, setState, toast, useDataVersion, useStore, type CoverageOf, type Tool } from '../store';
 import { money } from '../format';
+import { AsyncButton } from '../ui/common';
 
 const PARCEL = BALANCE.world.parcelSize;
 
@@ -70,6 +71,22 @@ function lineTiles(a: { x: number; y: number }, b: { x: number; y: number }) {
     }
   }
   return out.slice(0, 400);
+}
+
+/**
+ * Продължава трасето: нов участък от последната плочка до посочената (L-линия като пътя). Ако линията мине през
+ * вече начертана плочка, трасето се връща до нея (така се поправя грешка).
+ */
+function extendDraft(draft: { x: number; y: number }[], a: { x: number; y: number }, b: { x: number; y: number }) {
+  const start = draft.length ? draft[draft.length - 1] : a;
+  const seg = lineTiles(start, b);
+  const out = [...draft];
+  for (const t of draft.length ? seg.slice(1) : seg) {
+    const i = out.findIndex((p) => p.x === t.x && p.y === t.y);
+    if (i >= 0) out.splice(i + 1);
+    else out.push(t);
+  }
+  return out.slice(0, 600);
 }
 
 function rectTiles(a: { x: number; y: number }, b: { x: number; y: number }) {
@@ -338,6 +355,11 @@ export function MapView() {
       return;
     }
     const a = drag.current.mode === 'build' && drag.current.start ? drag.current.start : b;
+    if (t.kind === 'link') {
+      const draft = getState().linkDraft;
+      rr.drawCursor(extendDraft(draft, a, b), 0x6b7280, true);
+      return;
+    }
     const tiles = t.kind === 'select' ? [b] : previewTiles(t, a, b);
     const valid = t.kind === 'select' || tiles.every((x) => inTerritory(x.x, x.y));
     rr.drawCursor(tiles, toolColor(t), valid);
@@ -399,6 +421,10 @@ export function MapView() {
     }
     if (!c || !c.isOwner) {
       toast('Изберете свой град, за да строите', 'warning');
+      return;
+    }
+    if (t.kind === 'link') {
+      setState({ linkDraft: extendDraft(st.linkDraft, a, b) });
       return;
     }
     try {
@@ -602,6 +628,7 @@ export function MapView() {
       <div className="map-attrib">Релеф: AWS Terrain Tiles · Граници на областите: geoBoundaries (CC BY 4.0)</div>
       {city?.isOwner && (layer === 'power' || layer === 'water') && <UtilityLegend kind={layer} />}
       {city && layer === 'coverage' && <CoverageLegend />}
+      {tool.kind === 'link' && <LinkBar />}
       <div className="map-sky glass" title="Сезон и време">
         <span>{SEASON_LABEL[season]}</span>
         {WEATHER_LABEL[weather] && <span>{WEATHER_LABEL[weather]}</span>}
@@ -1020,6 +1047,74 @@ function CoverageLegend() {
         </div>
       )}
       <div className="small muted">При поставяне на услуга кръгът показва докъде ще стига.</div>
+    </div>
+  );
+}
+
+/** Лента при чертане на магистрала до друг град: дължина, цена по терена, проверки и „Построй“. */
+function LinkBar() {
+  const tool = useStore((s) => s.tool);
+  const draft = useStore((s) => s.linkDraft);
+  const city = useStore((s) => s.city);
+  const world = useStore((s) => s.world);
+  if (tool.kind !== 'link' || !city || !world) return null;
+  const gen = getWorld(world.seed);
+  const S = BALANCE.world.parcelSize;
+  const own = new Set(city.parcels.map((p) => `${p.px},${p.py}`));
+  const inOwn = (x: number, y: number) => own.has(`${Math.floor(x / S)},${Math.floor(y / S)}`);
+  const next = (p: { x: number; y: number }) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => inOwn(p.x + dx, p.y + dy));
+  let cost = 0;
+  let bridges = 0;
+  let tunnels = 0;
+  let bad = false;
+  for (const p of draft) {
+    const m = gen.roadCostMult(p.x, p.y);
+    if (!Number.isFinite(m)) bad = true;
+    else cost += Math.round(BALANCE.links.costPerTile * m);
+    if (m >= 4) bridges++;
+    else if (m >= 2.5) tunnels++;
+  }
+  const insideOwn = draft.some((p) => inOwn(p.x, p.y));
+  const starts = draft.length > 0 && (next(draft[0]) || next(draft[draft.length - 1]));
+  const close = () => setState({ tool: { kind: 'select' }, linkDraft: [] });
+  return (
+    <div className="utility-legend glass link-bar">
+      <div className="ul-head">
+        <b>🛣 Магистрала до „{tool.name}“</b>
+        <button className="link small" onClick={close}>
+          ✕ Отказ
+        </button>
+      </div>
+      <div className="small">
+        Чертайте като път: влачете или щракайте – всеки участък продължава от края на трасето. Започнете <b>точно до вашия град</b> и стигнете
+        <b> точно до „{tool.name}“</b>; минавайте извън териториите на градовете. Върнете се по трасето, за да го скъсите.
+      </div>
+      <div className="small">
+        Дължина: <b>{draft.length}</b> плочки · цена: <b>{money(cost)}</b>
+        {bridges > 0 && <> · мостове: {bridges}</>}
+        {tunnels > 0 && <> · тунели/планина: {tunnels}</>}
+      </div>
+      {insideOwn && <div className="small bad">Трасето минава през вашия град – вътре строете градски път, а магистралата започнете от ръба.</div>}
+      {bad && <div className="small bad">Трасето минава през открито море или извън България.</div>}
+      {draft.length > 0 && !starts && <div className="small bad">Трасето трябва да започва (или да свършва) точно до вашия град.</div>}
+      <div className="row">
+        <AsyncButton
+          className="btn primary small"
+          disabled={!draft.length || bad || insideOwn}
+          onClick={async () => {
+            const res = await post<{ cost: number }>(`/cities/${city.id}/links`, { toCityId: tool.toCityId, path: draft }, true);
+            toast(`Магистралата е построена (${money(res.cost)})`, 'success');
+            close();
+            await refreshCity();
+            bumpData();
+          }}
+        >
+          Построй · {money(cost)}
+        </AsyncButton>
+        <button className="btn small" disabled={!draft.length} onClick={() => setState({ linkDraft: [] })}>
+          Изчисти
+        </button>
+      </div>
     </div>
   );
 }

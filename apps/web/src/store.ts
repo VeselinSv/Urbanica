@@ -55,7 +55,9 @@ export type Tool =
   | { kind: 'service'; service: string }
   | { kind: 'facility'; facility: string }
   | { kind: 'bulldoze' }
-  | { kind: 'parcel' };
+  | { kind: 'parcel' }
+  /** Чертане на трасе на магистрала до друг град (извън териториите, като път). */
+  | { kind: 'link'; toCityId: string; name: string };
 
 export type Layer = 'none' | 'ownership' | 'resources' | 'zoning' | 'landValue' | 'traffic' | 'power' | 'water' | 'pollution' | 'activity' | 'coverage';
 /** Чий обхват показва слоят „Обхват на услугите“: една услуга или всички основни заедно. */
@@ -96,6 +98,8 @@ export interface State {
   tool: Tool;
   layer: Layer;
   coverageOf: CoverageOf;
+  /** Начертаното досега трасе на магистрала (плочки по ред). */
+  linkDraft: { x: number; y: number }[];
   panel: string;
   selected: { x: number; y: number } | null;
   toasts: Toast[];
@@ -127,6 +131,7 @@ let state: State = {
   tool: { kind: 'select' },
   layer: 'none',
   coverageOf: 'all',
+  linkDraft: [],
   panel: 'city',
   selected: null,
   toasts: [],

@@ -52,6 +52,79 @@ interface CompanyFull {
   advice?: { level: 1 | 2 | 3; text: string }[];
 }
 
+/** Етапи на развитие по активите на компанията (пари + съоръжения + стоки), в евро. */
+const STAGES = [
+  { name: 'Стартъп', min: 0 },
+  { name: 'Малък бизнес', min: 2_000_000 },
+  { name: 'Средно предприятие', min: 10_000_000 },
+  { name: 'Голяма компания', min: 50_000_000 },
+  { name: 'Корпорация', min: 250_000_000 },
+];
+
+/** Следващата стъпка във веригата: какво да построи компанията от това, което вече произвежда. */
+function nextStep(types: string[]): string {
+  if (!types.length) return 'Постройте първото съоръжение („Индустрия“): ферма на плодородна земя, мина върху находище или дъскорезница в гора – точно до път.';
+  const made = new Set<string>();
+  for (const t of types) for (const g of Object.keys(FACILITIES[t as FacilityType]?.recipe?.outputs ?? {})) made.add(g);
+  for (const f of FACILITY_TYPES) {
+    if (types.includes(f)) continue;
+    const ins = Object.keys(FACILITIES[f].recipe?.inputs ?? {});
+    if (ins.length && ins.every((g) => made.has(g)))
+      return `Преработвайте собствената си продукция: „${FACILITIES[f].name}“ ползва ${ins.map((g) => GOODS[g as GoodId].name.toLowerCase()).join(' и ')}, която вече произвеждате – готовата стока струва повече.`;
+  }
+  if (types.length < 3) return 'Постройте още едно съоръжение от същия вид или модернизирайте (машини) съществуващото – повече продукция при същите разходи за склад.';
+  return 'Изследвайте технологии („Технологии“) за по-висока производителност и по-малко замърсяване; помислете за договори с постоянни купувачи.';
+}
+
+/** Развитие на компанията: етап, напредък към следващия, пари и печалба във времето, следваща стъпка. */
+function CompanyGrowth({ d }: { d: CompanyFull }) {
+  const assets = d.valuation.assets / 100;
+  const i = STAGES.reduce((a, s, k) => (assets >= s.min ? k : a), 0);
+  const cur = STAGES[i];
+  const next = STAGES[i + 1];
+  const progress = next ? (assets - cur.min) / (next.min - cur.min) : 1;
+  const series = (d.stats ?? []).slice(-60).map((s) => ({ tick: s.tick, cash: s.cash / 100, profit: s.profit / 100 }));
+  const week = (d.stats ?? []).slice(-7);
+  const avg = week.length ? week.reduce((a, s) => a + s.profit, 0) / week.length : 0;
+  return (
+    <Section title="Развитие на компанията">
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <b>
+          {i + 1}/{STAGES.length} · {cur.name}
+        </b>
+        <span className={avg >= 0 ? 'good small' : 'bad small'}>{avg >= 0 ? '▲' : '▼'} {money(Math.round(avg))}/ден (7 дни)</span>
+      </div>
+      {next ? (
+        <Meter label={`Към „${next.name}“ (активи ${money(next.min * 100)})`} value={Math.max(0, Math.min(1, progress))} text={`${money(d.valuation.assets)}`} />
+      ) : (
+        <p className="small good">Най-високият етап.</p>
+      )}
+      {series.length > 1 && (
+        <div className="chart">
+          <ResponsiveContainer width="100%" height={150}>
+            <LineChart data={series}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis dataKey="tick" stroke="#94a3b8" fontSize={11} />
+              <YAxis stroke="#94a3b8" fontSize={11} />
+              <Tooltip contentStyle={{ background: '#0f172a', border: '1px solid #334155' }} />
+              <Line dataKey="cash" name="Пари" stroke="#38bdf8" dot={false} />
+              <Line dataKey="profit" name="Печалба/ден" stroke="#22c55e" dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+      <p className="small">
+        <b>Следваща стъпка:</b> {nextStep((d.facilitiesDetail ?? []).map((f) => f.type))}
+      </p>
+      <p className="small muted">
+        Как печели компанията: съоръженията произвеждат всеки ден; продукцията се продава на борсата (автоматично или ръчно) – на жителите (храна, стоки), на
+        други играчи и на световния пазар (до {pct(BALANCE.market.exportFloor, 0)} от пазарната цена). Разходите са заплати, поддръжка, ток и вода, такси
+        за замърсяване и ресурси. Печалбата се трупа като пари; от тях строите нови съоръжения и растете.
+      </p>
+    </Section>
+  );
+}
+
 /** Средни заплати на ден за последните дни (за прогнозата на решенията). */
 function wagesPerDay(d: CompanyFull): number {
   const s = (d.stats ?? []).slice(-7) as unknown as { costs: number }[];
@@ -132,12 +205,17 @@ function CompanyDecisions({ companyId, policy, wagesPerDay: costs, onSaved }: { 
             <input type="range" min={L.sellPrice[0]} max={L.sellPrice[1]} step={0.05} value={p.sellPrice} onChange={(e) => edit({ ...p, sellPrice: Number(e.target.value) })} />
           </Field>
           <p className="small decision-fx">
-            {p.sellPrice < 0.95 ? (
-              <span>Евтино – продава се бързо (и на износ), но с по-малка печалба.</span>
+            {p.sellPrice <= BALANCE.market.exportFloor ? (
+              <span className="good">
+                До {pct(BALANCE.market.exportFloor, 0)} – световният пазар изкупува всеки ден (износ), така че и суровините (зърно, дърва, руда, въглища) се
+                продават сигурно.
+              </span>
             ) : p.sellPrice > 1.1 ? (
               <span className="bad">Скъпо – повече пари на брой, но стоката може да остане в склада (жителите купуват до {pct(BALANCE.market.retailMaxPremium, 0)}).</span>
             ) : (
-              <span className="muted">Около пазарната цена – добър баланс между бързина и печалба.</span>
+              <span className="muted">
+                Над {pct(BALANCE.market.exportFloor, 0)} купуват само жителите (храна, стоки) и други играчи – суровините може да останат в склада.
+              </span>
             )}{' '}
             Суровините за собствените ви съоръжения не се продават.
           </p>
@@ -229,6 +307,7 @@ export function CompanyPanel() {
             <Stat label="Печалба (30 дни, паричен поток)" value={money(d.publicReport.profit)} tone={d.publicReport.profit < 0 ? 'bad' : 'good'} />
             <Stat label="Статус" value={d.status} />
           </div>
+          <CompanyGrowth d={d} />
           {d.advice && d.advice.length > 0 && (
             <Section title="Как върви компанията">
               <ul className="needs-list">

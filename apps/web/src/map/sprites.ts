@@ -1114,7 +1114,7 @@ export type BuildingKey = (
   | { k: 'tree'; t: TreeKind; v: number; size: number }
   | { k: 'rock'; v: number; peak?: number; snow?: boolean }
   | { k: 'tunnel'; v: number; dir: number; w?: number }
-  | { k: 'bridge'; axis: 'x' | 'y'; h0: number; h1: number; water: boolean; w: number; lamp: boolean; v: number }
+  | { k: 'bridge'; axis: 'x' | 'y'; h0: number; h1: number; water: boolean; w: number; lamp: boolean; v: number; cross?: boolean }
 ) & { sn?: Season };
 
 const cache = new Map<string, Sprite>();
@@ -1811,6 +1811,32 @@ function farmTile(g: Ctx, P: P3, r: number, v: number, lvl: number, dim: (c: num
  */
 function bridgeDeck(key: Extract<BuildingKey, { k: 'bridge' }>, r: number): Sprite {
   const { axis, h0, h1, water, w, lamp } = key;
+  if (key.cross)
+    return makeSprite(r, 50, (g, P) => {
+      // кръстовище на моста: квадратна плоча на опора, асфалт, пешеходни пътеки, ъглови стълбове
+      const H = h0;
+      poly(g, [P(-0.5, -0.4, 0), P(0.6, -0.4, 0), P(0.6, 0.6, 0), P(-0.5, 0.6, 0)], 'rgba(8,20,30,0.28)');
+      box(g, P, -0.12, -0.12, 0.12, 0.12, -1, H - 2.4, { wall: 0xa9a59c });
+      box(g, P, -0.5, -0.5, 0.5, 0.5, H - 2.4, H, { wall: 0xbab6ad, top: 0xcfcbc2, edge: false });
+      poly(g, [P(-0.5, -0.5, H + 0.2), P(0.5, -0.5, H + 0.2), P(0.5, 0.5, H + 0.2), P(-0.5, 0.5, H + 0.2)], rgb(0x4b4e53));
+      for (const [a, b] of [
+        [-0.42, -0.25],
+        [0.25, 0.42],
+      ]) {
+        for (let i = 0; i < 5; i++) {
+          const o = -0.3 + i * 0.15;
+          line(g, P(a, o, H + 0.3), P(b, o, H + 0.3), 'rgba(255,255,255,0.55)', 1.2 * r);
+          line(g, P(o, a, H + 0.3), P(o, b, H + 0.3), 'rgba(255,255,255,0.55)', 1.2 * r);
+        }
+      }
+      for (const [u, v] of [
+        [-0.5, -0.5],
+        [0.5, -0.5],
+        [-0.5, 0.5],
+        [0.5, 0.5],
+      ])
+        line(g, P(u, v, H), P(u, v, H + 3.4), rgb(0x8f949a), 1 * r);
+    });
   return makeSprite(r, 50, (g, P0) => {
     // локално: a – по оста на моста (−0.5..0.5), b – напречно
     const P: P3 = (a, b, h) => (axis === 'x' ? P0(a, b, h) : P0(b, a, h));

@@ -426,7 +426,7 @@ export async function marketDailyGood(
         MarketOrder[]
       >`SELECT * FROM "MarketOrder" WHERE instrument = ${instrument} AND side = 'SELL' AND status = 'OPEN' AND remaining > 0 AND price <= ${Math.round(ref * M.retailMaxPremium)} ORDER BY price ASC, id ASC FOR UPDATE`;
       let retailLeft = retailDemand;
-      let exportLeft = Math.round(def.worldVolume * 0.6);
+      let exportLeft = Math.round(def.worldVolume * M.exportVolume);
       for (const o of sells) {
         const price = Number(o.price);
         let q = 0;
@@ -464,7 +464,8 @@ export async function marketDailyGood(
       const openSell = Number(pressure.find((p) => p.side === 'SELL')?.qty ?? 0);
       const openBuy = Number(pressure.find((p) => p.side === 'BUY')?.qty ?? 0);
       const unmet = retailLeft;
-      const excess = unmet * 0.5 + imported - exported + 0.05 * openBuy - 0.05 * openSell;
+      // износът е световно търсене на почти пазарна цена – натиска цената надолу слабо (иначе изнасянето би я сринало)
+      const excess = unmet * 0.5 + imported - exported * 0.25 + 0.05 * openBuy - 0.05 * openSell;
       const newRef = nextReferencePrice({ good, ref, excessDemand: excess, volume: def.worldVolume + retailDemand, refs });
       const state = await tx.marketState.findUnique({ where: { instrument } });
       await tx.priceHistory.create({

@@ -172,6 +172,8 @@ model CityLink {
   /// дължина в плочки (разстоянието между центровете на градовете)
   length      Int
   cost        BigInt
+  /// трасето, начертано от кмета: [[x,y],…] от ръба на единия град до ръба на другия ([] – старите връзки)
+  path        Json     @default("[]")
   createdTick Int
   createdAt   DateTime @default(now())
 

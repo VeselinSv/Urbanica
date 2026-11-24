@@ -27,7 +27,7 @@ export const COMPANY_POLICY_LIMITS = {
 } as const;
 
 /** Старите компании (празно policy) – без автоматични продажби; новите се основават с включени (виж foundCompany). */
-export const DEFAULT_COMPANY_POLICY: CompanyPolicy = { wageLevel: 1, maintenance: 1, autoSell: false, sellPrice: 1, keepStock: 0 };
+export const DEFAULT_COMPANY_POLICY: CompanyPolicy = { wageLevel: 1, maintenance: 1, autoSell: false, sellPrice: 0.9, keepStock: 0 };
 
 export function companyPolicy(raw: unknown): CompanyPolicy {
   const p = { ...DEFAULT_COMPANY_POLICY, ...((raw ?? {}) as Partial<CompanyPolicy>) };

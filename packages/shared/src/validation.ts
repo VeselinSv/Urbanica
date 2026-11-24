@@ -49,7 +49,11 @@ export const BuildSchema = z.discriminatedUnion('action', [
 ]);
 export type BuildInput = z.infer<typeof BuildSchema>;
 
-export const LinkSchema = z.object({ toCityId: z.string().min(5).max(40) });
+export const LinkSchema = z.object({
+  toCityId: z.string().min(5).max(40),
+  /** трасето на магистралата, начертано на картата (последователни съседни плочки) */
+  path: z.array(tile).min(1).max(600).optional(),
+});
 
 export const BuyParcelSchema = z.object({ px: z.number().int().min(0), py: z.number().int().min(0) });
 
